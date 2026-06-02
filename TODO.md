@@ -23,18 +23,6 @@ Then I need to build the battle simulator which will be the hard bit
 - Create a battle stat, then calculate the battle-event of attacking
 - Output the pokemon state
 
-Lets take a JSON like PokePaste
-
-Ok so for Garchomp I want the stats, nature, etc + moves.
-Ability has to be a script
-Move has to be a script on the battle stat
-
-Battle 
-    - P1 P2 v O1 O2 doubles
-    - Weather
-    - Terrain
-    - Rooms*
-
 For like Sand Force, it needs to check the battle state. So smth like:
 1. Garchomp does Draco Meteor
 2. Ability is checked, has a move modifier
@@ -43,6 +31,17 @@ For like Sand Force, it needs to check the battle state. So smth like:
 5. Move continues the stuff
 
 The battle logic is gonna be complicated, so I'm going to build this step by step. I think I'll group abilities & traits to understand what affects what.
+
+
+Expanding the current test case:
+1. Add Draco to the action queue-
+2. Pop the action queue, evaluate the move
+3. Check all conditions that will prevent the move from occurring (choice, encore, ability block)
+4. Check modifications to the move, target, power, etc.
+
+I want to get a list of moves so I have a generic case somewhat.
+It's frustating
+
 
 
 ## Tasks

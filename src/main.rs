@@ -1,16 +1,20 @@
+use crate::battle::ActivePokemon;
+use crate::battle::BattleState;
 use crate::battle::PokemonType;
 use crate::battle::get_type_multipler;
 
 fn main() {
     println!("Hello, world!");
 
-    analyze();
+    // analyze();
+    make_battle_state();
 }
 
 mod battle;
 mod pokemon;
 // use crate::pokemon::poke_stat::PokemonStats;
 use crate::pokemon::PokemonName;
+use crate::pokemon::moves::PokemonMoveName;
 
 fn basic_poke() {
     use crate::pokemon::Pokemon;
@@ -19,6 +23,7 @@ fn basic_poke() {
     //     name: PokemonName::Garchomp,
     // }
 }
+
 
 fn analyze() {
     // TODO: take some input
@@ -39,4 +44,18 @@ fn analyze() {
     println!("Pokemon display {}", garchomp);
 
     // poke_str = "Bisharp"
+}
+
+fn make_battle_state() {
+    let mut bs = BattleState::new();
+
+    let mut garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
+    let draco_move = pokemon::moves::get_move(PokemonMoveName::Draco_Meteor);
+
+    garchomp.learnset.push(draco_move);
+    
+    bs.f_poke1 = Some(ActivePokemon::new(garchomp));
+
+    println!("Printing the current battle state:");
+    println!("{}", bs.get_print_state())
 }

@@ -1,24 +1,35 @@
 // moves and information
 
-use crate::battle::PokemonType;
+use crate::{battle::{BattleState, PokemonType}, pokemon::moves::PokemonMoveTarget::OPPONENT};
 
 /// Move type and additional information
-enum PokemonMoveType {
+pub enum PokemonMoveCategory {
     Physical,
     Special,
     Status
 }
 
+pub enum PokemonMoveTarget {
+    OPPONENT,
+    ALLY,
+    SELF,
+    OPPONENT_ALL,
+    ALLY_ALL,
+    ANY
+}
+
+#[allow(dead_code)]
 pub struct PokemonMove {
     name: PokemonMoveName,
     power: i32,
     r#type: PokemonType,
     // Explanation of the move type
-    category: PokemonMoveType,
+    category: PokemonMoveCategory,
     accuracy: f64, // note need to convert to proper i32
     pp: i32,
     priority: i8,
     contact: bool,
+    target: PokemonMoveTarget
 }
 
 /// Effects incurred by a move
@@ -32,9 +43,34 @@ pub struct PokemonMove {
 // }
 
 impl PokemonMove {
+    pub fn new (move_name:PokemonMoveName, 
+        move_type:PokemonType, 
+        catg:PokemonMoveCategory) -> Self {
+        PokemonMove {
+            name: move_name,
+            r#type: move_type,
+            category: catg,
+            power: 50,
+            accuracy: 1.0,
+            pp: 32,
+            contact: false,
+            priority: 0,
+            target: OPPONENT
+        }
+    }
+
+    pub fn set_attr(mut self,
+        power:i32, acc:f64, target:PokemonMoveTarget 
+    ) -> Self {
+        self.power = power;
+        self.accuracy = acc;
+        self.target = target;
+        self
+    }
+
     fn afterSuccess (&self, battle_state:&BattleState) {
         use PokemonMoveName::*;
-        let move_result = None; // Move result here
+        // let move_result = None; // Move result here
         match self.name {
             Draco_Meteor => {
                 // get move_performer
@@ -46,22 +82,24 @@ impl PokemonMove {
 }
 
 
+#[allow(dead_code)]
 pub enum PokemonMoveName {
     Draco_Meteor,
     Kowtow_Cleave
 }
 
-pub fn get_pokemon_move(pkmn_move:PokemonMoveName) -> PokemonMove {
+pub fn get_move(pkmn_move:PokemonMoveName) -> PokemonMove {
     match pkmn_move {
         PokemonMoveName::Draco_Meteor => PokemonMove {
             name: pkmn_move,
             r#type: PokemonType::DRAGON,
             power: 130,
-            category: PokemonMoveType::Special,
+            category: PokemonMoveCategory::Special,
             accuracy: 0.9,
             pp: 12,
             contact: false,
-            priority: 0
+            priority: 0,
+            target: OPPONENT
         },
         _ => panic!("Move has not been implemented!")
     }

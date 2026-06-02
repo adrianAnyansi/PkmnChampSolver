@@ -4,6 +4,7 @@ use core::fmt;
 
 
 /// Pokemon Type
+#[allow(dead_code)]
 #[derive(Copy, Clone)] // copy trait added for trival enum copy
 pub enum PokemonType {
     NORMAL,
@@ -126,16 +127,20 @@ pub fn get_type_multipler(type_atk:PokemonType, type_def:PokemonType) -> f64 {
     mult
 }
 
-use crate::pokemon::Pokemon;
+use crate::pokemon::{Pokemon, moves::PokemonMove};
 
+#[allow(dead_code)]
 pub enum PokemonStatus {
+    NONE,
     BURNED,
     PARALYZED,
     FROZEN,
     SLEEP,
-    POISONED
+    POISONED,
 }
 
+#[allow(dead_code)]
+#[allow(non_camel_case_types)]
 enum PokemonStatModifier {
     ZERO = 0,
     MINUS_1 = -1,
@@ -173,26 +178,108 @@ fn get_stat_modify(poke_mod:PokemonStatModifier) -> f64 {
 }
 
 /// Represents an active pokemon slot including current hp, status and boosts
-struct ActivePokemon {
+pub struct ActivePokemon {
     pokemon: Pokemon,
     status: PokemonStatus,
     stat_modifier: [i8; 5], // temp exclude evasion & acc
     // exclude crit
-    currentHP: i32,
+    current_hp: i32,
+}
+
+// TODO: Currently I'm moving the struct instead of referencing
+// I don't want multiple structs of base pokemon but it's hard to 
+// reason about this while being new to Rust.
+// So I'm just going to leave this as a copy for now and remember I'm duplicating
+impl ActivePokemon {
+    pub fn new (pokemon:Pokemon) -> Self {
+        Self {
+            current_hp: pokemon.base_stats.health, // copied first
+            pokemon: pokemon, // this is moved here
+            status: PokemonStatus::NONE,
+            stat_modifier: [0;5],
+        }
+    }
+}
+
+/// Generic Event representing a current action in the turn state.
+/// Will include moves, ability/event resolves, etc.
+/// Will think about how to structure this and what types make sense here
+pub struct BattleAction {
+    name: String,
+}
+
+pub struct MoveAction<'a> {
+    source: &'a Pokemon,
+    target: Vec<Pokemon>,
+    moveDet: &'a PokemonMove,
 }
 
 /// Represents the state of the battle between any action/resolve.
 /// This can include intermediate states
-struct BattleState {
-    poke1: Option<Pokemon>,
-    poke2: Option<Pokemon>,
-    opp1: Option<Pokemon>,
-    opp2: Option<Pokemon>,
-    weather: String,
-    terrain: String,
-    effects: String,
-    room: String,
-    internal_state: String,
-    current_action: Option<String>,
-    turn_num: i32,
+pub struct BattleState {
+    pub f_poke1: Option<ActivePokemon>,
+    pub f_poke2: Option<ActivePokemon>,
+    pub b_poke1: Option<ActivePokemon>,
+    pub b_poke2: Option<ActivePokemon>,
+    pub weather: String,
+    pub terrain: String,
+    pub effects: String,
+    pub room: String,
+    /// This will contain the many per battle effects that don't fit neatly
+    /// i.e Rage Fist, Disguise, etc.
+    pub internal_state: String,
+    pub current_action: Option<String>,
+    pub action_queue: Vec<BattleAction>,
+    pub turn_num: i32,
+}
+
+impl BattleState {
+
+    pub fn new () -> Self {
+        BattleState {
+            f_poke1: None,
+            f_poke2: None,
+            b_poke1: None,
+            b_poke2: None,
+            // Will implement this properly later in the future idk
+            weather: "None".to_string(),
+            terrain: "None".to_string(),
+            effects: "None".to_string(),
+            room: "None".to_string(),
+            internal_state: "_".to_string(),
+            current_action: None,
+            action_queue: vec![],
+            turn_num: 0,
+        }
+    }
+
+    fn get_default_poke_name (poke:&Option<ActivePokemon>) -> String {
+        return poke.as_ref().map(|p| p.pokemon.name.to_string()).unwrap_or_else(|| "_".to_string());
+    }
+
+    fn get_front_poke(&self) -> String {
+        format!("Front: {} {}", 
+            BattleState::get_default_poke_name(&self.f_poke1),
+            BattleState::get_default_poke_name(&self.f_poke2))
+    }
+
+    pub fn get_print_state(&self) -> String {
+
+        let back_row_str = format!("Back: {} {}", 
+            BattleState::get_default_poke_name(&self.b_poke1),
+            BattleState::get_default_poke_name(&self.b_poke2));
+
+        let field_state = format!("Weather: {}, Other: {}", 
+            self.weather, self.terrain);
+
+        let turn_num = self.turn_num;
+
+        format!(
+            "*Battle State* Turn: {turn_num}\n\
+            {back_row_str}\n\
+            {}\n\
+            Field: {field_state}",
+            self.get_front_poke(),
+        )
+    }
 }

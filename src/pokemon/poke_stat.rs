@@ -1,6 +1,7 @@
 
 
 /// Statistics of a Pokemon
+#[allow(dead_code)]
 pub struct PokemonStats {
     pub health: i32,
     pub attack: i32,

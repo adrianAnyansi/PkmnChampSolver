@@ -2,7 +2,7 @@
 
 
 pub mod poke_stat;
-mod moves;
+pub mod moves;
 
 pub struct I32Range {
     low: i32,
@@ -24,10 +24,6 @@ pub enum PokemonAbility {
     SandForce
 }
 
-pub enum PokemonMove {
-    Earthquake
-}
-
 pub enum PokemonItem {
     Garchompinite,
     SoftSand
@@ -36,20 +32,20 @@ pub enum PokemonItem {
 
 
 use crate::battle::PokemonType;
-// use crate::data::getPokemon;
+use crate::pokemon::moves::PokemonMove;
 use crate::pokemon::poke_stat::{PokemonStats, get_pkmn_stat};
 
 pub struct Pokemon {
-    name: PokemonName,
-    base_stats: PokemonStats,
-    trained_stats: Option<PokemonStats>,
-    ability: PokemonAbility,
-    nature: PokemonNature,
-    learnset: Vec<PokemonMove>,
-    weight: f64,
-    type1: PokemonType,
-    type2: Option<PokemonType>,
-    held_item: PokemonItem
+    pub name: PokemonName,
+    pub base_stats: PokemonStats,
+    pub trained_stats: Option<PokemonStats>,
+    pub ability: PokemonAbility,
+    pub nature: PokemonNature,
+    pub learnset: Vec<PokemonMove>,
+    pub weight: f64,
+    pub type1: PokemonType,
+    pub type2: Option<PokemonType>,
+    pub held_item: PokemonItem
 }
 
 impl core::fmt::Display for Pokemon {
