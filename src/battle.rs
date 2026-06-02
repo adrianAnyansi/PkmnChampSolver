@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+
 /// Pokemon Type
 #[derive(Copy, Clone)] // copy trait added for trival enum copy
 pub enum PokemonType {
@@ -123,4 +124,75 @@ const fn type_hash_func(type_atk:PokemonType, type_def:PokemonType) -> usize {
 pub fn get_type_multipler(type_atk:PokemonType, type_def:PokemonType) -> f64 {
     let mult = TYPE_CHART_ARRAY[type_hash_func(type_atk, type_def)];
     mult
+}
+
+use crate::pokemon::Pokemon;
+
+pub enum PokemonStatus {
+    BURNED,
+    PARALYZED,
+    FROZEN,
+    SLEEP,
+    POISONED
+}
+
+enum PokemonStatModifier {
+    ZERO = 0,
+    MINUS_1 = -1,
+    MINUS_2 = -2,
+    MINUS_3 = -3,
+    MINUS_4 = -4,
+    MINUS_5 = -5,
+    MINUS_6 = -6,
+    PLUS_1 = 1,
+    PLUS_2 = 2,
+    PLUS_3 = 3,
+    PLUS_4 = 4,
+    PLUS_5 = 5,
+    PLUS_6 = 6
+}
+
+fn get_stat_modify(poke_mod:PokemonStatModifier) -> f64 {
+    use PokemonStatModifier::*;
+
+    match poke_mod {
+        ZERO => 1.0,
+        MINUS_1 => 2.0/3.0,
+        MINUS_2 => 2.0/4.0,
+        MINUS_3 => 2.0/5.0,
+        MINUS_4 => 2.0/6.0,
+        MINUS_5 => 2.0/7.0,
+        MINUS_6 => 2.0/8.0,
+        PLUS_1  => 3.0/2.0,
+        PLUS_2  => 4.0/2.0,
+        PLUS_3  => 5.0/2.0,
+        PLUS_4  => 6.0/2.0,
+        PLUS_5  => 7.0/2.0,
+        PLUS_6  => 8.0/2.0,
+    }
+}
+
+/// Represents an active pokemon slot including current hp, status and boosts
+struct ActivePokemon {
+    pokemon: Pokemon,
+    status: PokemonStatus,
+    stat_modifier: [i8; 5], // temp exclude evasion & acc
+    // exclude crit
+    currentHP: i32,
+}
+
+/// Represents the state of the battle between any action/resolve.
+/// This can include intermediate states
+struct BattleState {
+    poke1: Option<Pokemon>,
+    poke2: Option<Pokemon>,
+    opp1: Option<Pokemon>,
+    opp2: Option<Pokemon>,
+    weather: String,
+    terrain: String,
+    effects: String,
+    room: String,
+    internal_state: String,
+    current_action: Option<String>,
+    turn_num: i32,
 }

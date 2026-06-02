@@ -1,0 +1,60 @@
+Crabominable @ Crabominite  
+Ability: Anger Point  
+Level: 50  
+EVs: 32 HP / 2 Atk / 21 Def / 7 Spe  
+Relaxed Nature  
+- Rock Slide  
+- Ice Punch  
+- Protect  
+- Drain Punch  
+
+Froslass (F) @ Froslassite  
+Ability: Snow Cloak  
+Level: 50  
+EVs: 2 Def / 32 SpA / 32 Spe  
+Timid Nature  
+- Aurora Veil  
+- Blizzard  
+- Frost Breath  
+- Protect  
+
+Ariados @ Scope Lens  
+Ability: Insomnia  
+Level: 50  
+EVs: 32 HP / 20 Atk / 2 SpD / 7 Spe  
+Brave Nature  
+- Rage Powder  
+- Focus Energy  
+- Shadow Sneak  
+- Poison Jab  
+
+Tauros-Paldea-Aqua (M) @ Payapa Berry  
+Ability: Anger Point  
+Level: 50  
+EVs: 32 HP / 2 Def / 32 Spe  
+Jolly Nature  
+- Rock Slide  
+- Aqua Jet  
+- Lash Out  
+- Protect  
+
+Whimsicott @ Focus Sash  
+Ability: Prankster  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Impish Nature  
+- Tailwind  
+- Memento  
+- U-turn  
+- Taunt  
+
+Slowking @ Sitrus Berry  
+Ability: Regenerator  
+Level: 50  
+EVs: 32 HP / 32 SpA / 2 SpD  
+Quiet Nature  
+- Psychic  
+- Trick Room  
+- Scald  
+- Chilly Reception  
+
