@@ -11,6 +11,15 @@ pub struct PokemonStats {
     pub speed: i32
 }
 
+pub enum PokemonStatName {
+    HEALTH,
+    ATTACK,
+    DEFENSE,
+    SPECIAL_ATTACK,
+    SPECIAL_DEFENSE,
+    SPEED
+}
+
 pub fn gen_pkmn_stat(
     hp:i32, atk:i32, def:i32, satk:i32, sdef:i32, spd:i32
 ) -> PokemonStats {

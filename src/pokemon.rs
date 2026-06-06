@@ -3,6 +3,7 @@
 
 pub mod poke_stat;
 pub mod moves;
+pub mod types;
 
 pub struct I32Range {
     low: i32,
@@ -31,7 +32,7 @@ pub enum PokemonItem {
 
 
 
-use crate::battle::PokemonType;
+use crate::pokemon::types::PokemonType;
 use crate::pokemon::moves::PokemonMove;
 use crate::pokemon::poke_stat::{PokemonStats, get_pkmn_stat};
 
@@ -56,18 +57,34 @@ impl core::fmt::Display for Pokemon {
     }
 }
 
+impl Pokemon {
+
+    pub fn has_type(&self, pkm_type:PokemonType) -> bool {
+        pkm_type == self.type1 || Some(pkm_type) == self.type2
+    }
+}
+
 
 pub fn get_pkmn(pkmn:PokemonName) -> Pokemon {
-    return Pokemon {
-        name: PokemonName::Garchomp, 
-        base_stats: get_pkmn_stat(PokemonName::Garchomp), 
-        trained_stats: None, 
-        ability: PokemonAbility::SandForce, 
-        nature: PokemonNature::Brave, 
-        learnset: Vec::new(), 
-        weight: 209.4,
-        type1: PokemonType::GROUND, 
-        type2: Some(PokemonType::DRAGON), 
+    match pkmn {
+        PokemonName::Garchomp => get_garchomp(),
+        PokemonName::Bisharp => unimplemented!()
+    }
+
+}
+
+// TODO: Put this in a data file
+fn get_garchomp() -> Pokemon {
+    Pokemon {
+        name: PokemonName::Garchomp,
+        base_stats: get_pkmn_stat(PokemonName::Garchomp),
+        trained_stats: None,
+        ability: PokemonAbility::SandForce,
+        nature: PokemonNature::Brave,
+        learnset: vec![],
+        weight: 95.0,
+        type1: PokemonType::DRAGON,
+        type2: Some(PokemonType::GROUND),
         held_item: PokemonItem::SoftSand
-    };
+    }
 }

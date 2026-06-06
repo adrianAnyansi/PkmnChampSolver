@@ -1,5 +1,23 @@
 # Moves descriptions
 
+Future thought- make all pokemon evaluate if they can submit an attack or change they move/action to be automatic (certain attacks/checks) still occur during the turn order
+
+Ok lets do the example again again
+
+- Add Draco Meteor with target
+
+## Simulation thoughts
+So here's some things I'm considering...
+For programming reasons any probablastic effect needs to be sent up- basically pulled out of the battle state completely.
+There are obvious shorthand - % miss rolls become split, damage rolls.
+But what about statuses, basically a generic splitter needs to be envisioned. I'm gonna do that later though- it requires thought
+But remember that probablistic stuff needs to be returned
+
+I thought bout it on a drive
+- return either a vec of battlestates or the range for the battlestate internally instead of modifiying the root one
+- wait im gonna have to hash the state anyways, damn
+
+
 ## Primary
 - Generic moves; type + power + accuracy
 - Status moves

@@ -1,13 +1,12 @@
 use crate::battle::ActivePokemon;
 use crate::battle::BattleState;
-use crate::battle::PokemonType;
-use crate::battle::get_type_multipler;
+use crate::pokemon::types::{PokemonType, get_type_multipler};
 
 fn main() {
     println!("Hello, world!");
 
     // analyze();
-    make_battle_state();
+    garchomp_fight_test();
 }
 
 mod battle;
@@ -46,16 +45,37 @@ fn analyze() {
     // poke_str = "Bisharp"
 }
 
-fn make_battle_state() {
-    let mut bs = BattleState::new();
+fn garchomp_fight_test() {
+    let mut bs = BattleState::new();                  
 
     let mut garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
+    let mut bis = pokemon::get_pkmn(PokemonName::Bisharp);
     let draco_move = pokemon::moves::get_move(PokemonMoveName::Draco_Meteor);
 
     garchomp.learnset.push(draco_move);
     
     bs.f_poke1 = Some(ActivePokemon::new(garchomp));
+    bs.b_poke1 = Some(ActivePokemon::new(bis));
 
     println!("Printing the current battle state:");
-    println!("{}", bs.get_print_state())
+    println!("{}", bs.get_print_state());
+
+    // queue
+    let mut act_garchomp = bs.f_poke1.unwrap();
+    let mut act_bis = bs.b_poke1.unwrap();
+    
+    BattleState::queue_move(
+        &mut bs.action_queue,
+        &mut act_garchomp, 
+        &garchomp.learnset[0],
+        vec![&mut act_bis]
+    );
+    // & act_garchomp.pokemon.learnset[0]);
+
+    // do move
+    bs.perform_turn();
+
+    // print state again
+    println!("Printing the current battle state:");
+    println!("{}", bs.get_print_state());
 }

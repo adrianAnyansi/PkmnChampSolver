@@ -1,8 +1,12 @@
 // moves and information
 
-use crate::{battle::{BattleState, PokemonType}, pokemon::moves::PokemonMoveTarget::OPPONENT};
+use strum_macros::{Display, EnumString};
+
+use crate::{battle::{BattleAction, BattleState, MoveAction}, pokemon::moves::{PokemonMoveName::Draco_Meteor, PokemonMoveTarget::OPPONENT}};
+use crate::pokemon::types::PokemonType;
 
 /// Move type and additional information
+#[derive(PartialEq, Copy, Clone)]
 pub enum PokemonMoveCategory {
     Physical,
     Special,
@@ -20,16 +24,16 @@ pub enum PokemonMoveTarget {
 
 #[allow(dead_code)]
 pub struct PokemonMove {
-    name: PokemonMoveName,
-    power: i32,
-    r#type: PokemonType,
+    pub name: PokemonMoveName,
+    pub power: i32,
+    pub r#type: PokemonType,
     // Explanation of the move type
-    category: PokemonMoveCategory,
-    accuracy: f64, // note need to convert to proper i32
+    pub category: PokemonMoveCategory,
+    pub accuracy: f64, // note need to convert to proper i32
     pp: i32,
-    priority: i8,
+    pub priority: i8,
     contact: bool,
-    target: PokemonMoveTarget
+    pub target_type: PokemonMoveTarget
 }
 
 /// Effects incurred by a move
@@ -55,7 +59,7 @@ impl PokemonMove {
             pp: 32,
             contact: false,
             priority: 0,
-            target: OPPONENT
+            target_type: OPPONENT
         }
     }
 
@@ -64,11 +68,11 @@ impl PokemonMove {
     ) -> Self {
         self.power = power;
         self.accuracy = acc;
-        self.target = target;
+        self.target_type = target;
         self
     }
 
-    fn afterSuccess (&self, battle_state:&BattleState) {
+    pub fn afterSuccess (&self, battle_state:&BattleState) {
         use PokemonMoveName::*;
         // let move_result = None; // Move result here
         match self.name {
@@ -79,10 +83,22 @@ impl PokemonMove {
             _ => return // no effect
         }
     }
+
+    pub fn intn_condition_check (&self, 
+        battle_state:&BattleState, 
+        move_action:&MoveAction) -> bool {
+        // let name = self.name;
+        match self.name {
+            // perform move condition here
+            // Draco_Meteor => move_action.
+            _ => return true
+        }
+    }
 }
 
 
 #[allow(dead_code)]
+#[derive(Display)]
 pub enum PokemonMoveName {
     Draco_Meteor,
     Kowtow_Cleave
@@ -99,7 +115,7 @@ pub fn get_move(pkmn_move:PokemonMoveName) -> PokemonMove {
             pp: 12,
             contact: false,
             priority: 0,
-            target: OPPONENT
+            target_type: OPPONENT
         },
         _ => panic!("Move has not been implemented!")
     }
