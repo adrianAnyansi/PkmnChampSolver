@@ -1,8 +1,9 @@
-
+use serde::Deserialize;
+use serde::{Deserializer};
 
 /// Pokemon Type
 #[allow(dead_code)]
-#[derive(Copy, Clone, Eq, PartialEq)] // copy trait added for trival enum copy
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum  PokemonType {
     NORMAL,
     FIRE,
@@ -23,6 +24,37 @@ pub enum  PokemonType {
     STEEL,
     POISON,
     TYPELESS
+}
+
+impl<'de> Deserialize<'de> for PokemonType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_uppercase().as_str() {
+            "NORMAL" => Ok(PokemonType::NORMAL),
+            "FIRE" => Ok(PokemonType::FIRE),
+            "WATER" => Ok(PokemonType::WATER),
+            "GRASS" => Ok(PokemonType::GRASS),
+            "ELECTRIC" => Ok(PokemonType::ELECTRIC),
+            "BUG" => Ok(PokemonType::BUG),
+            "FLYING" => Ok(PokemonType::FLYING),
+            "FIGHTING" => Ok(PokemonType::FIGHTING),
+            "GHOST" => Ok(PokemonType::GHOST),
+            "DARK" => Ok(PokemonType::DARK),
+            "PSYCHIC" => Ok(PokemonType::PSYCHIC),
+            "FAIRY" => Ok(PokemonType::FAIRY),
+            "DRAGON" => Ok(PokemonType::DRAGON),
+            "ROCK" => Ok(PokemonType::ROCK),
+            "GROUND" => Ok(PokemonType::GROUND),
+            "ICE" => Ok(PokemonType::ICE),
+            "STEEL" => Ok(PokemonType::STEEL),
+            "POISON" => Ok(PokemonType::POISON),
+            "TYPELESS" => Ok(PokemonType::TYPELESS),
+            _ => Err(serde::de::Error::custom(format!("Invalid type: {}", s))),
+        }
+    }
 }
 
 impl core::fmt::Display for PokemonType {

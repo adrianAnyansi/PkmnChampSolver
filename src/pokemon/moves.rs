@@ -1,5 +1,6 @@
 // moves and information
 
+use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
 use crate::{battle::{BattleAction, BattleState, MoveAction}, pokemon::moves::{PokemonMoveName::Draco_Meteor, PokemonMoveTarget::OPPONENT}};
@@ -72,7 +73,7 @@ impl PokemonMove {
         self
     }
 
-    pub fn afterSuccess (&self, battle_state:&BattleState) {
+    pub fn after_success (&self, battle_state:&BattleState) {
         use PokemonMoveName::*;
         // let move_result = None; // Move result here
         match self.name {
@@ -97,11 +98,18 @@ impl PokemonMove {
 }
 
 
-#[allow(dead_code)]
-#[derive(Display)]
+#[allow(dead_code, non_camel_case_types)]
+#[derive(Display, Debug, Deserialize)]
 pub enum PokemonMoveName {
     Draco_Meteor,
-    Kowtow_Cleave
+    Kowtow_Cleave,
+    Iron_Head,
+    Night_Slash,
+    Crunch,
+    Stone_Edge,
+    Dragon_Claw,
+    Earthquake
+
 }
 
 pub fn get_move(pkmn_move:PokemonMoveName) -> PokemonMove {

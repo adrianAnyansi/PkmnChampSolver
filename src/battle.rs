@@ -3,7 +3,7 @@
 
 use std::{collections::VecDeque};
 
-use crate::{pokemon::{Pokemon, moves::{PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::PokemonStatName, types::{PokemonType, get_type_multipler}}};
+use crate::pokemon::{Pokemon, PokemonAbility, PokemonNature, moves::{PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 
 #[allow(dead_code)]
 pub enum PokemonStatus {
@@ -17,6 +17,7 @@ pub enum PokemonStatus {
 
 #[allow(dead_code)]
 #[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy)]
 enum PokemonStatModifier {
     ZERO = 0,
     MINUS_1 = -1,
@@ -32,6 +33,32 @@ enum PokemonStatModifier {
     PLUS_5 = 5,
     PLUS_6 = 6
 }
+
+// TODO: I would like a trait that can be applied to stat modifiers and etc
+// This way every multiply is natively handled in order without thought
+/// Convert the enum modifier to a float and apply to int with floor
+impl std::ops::Mul<i32> for PokemonStatModifier {
+    type Output = i32;
+
+    fn mul(self, base_int: i32) -> Self::Output {
+        let self_value = get_stat_modify(self);
+        let rhs_value = base_int as f64;
+        (self_value * rhs_value) as i32
+    }
+}
+
+impl std::ops::Mul<PokemonStatModifier> for i32 {
+    type Output = i32;
+
+    fn mul(self, rhs: PokemonStatModifier) -> Self::Output {
+        rhs * self
+    }
+}
+// trait FloAorInteger {
+//     fn floor_integer(&self, base_int:i32) -> i32 {
+//         (base_int as f64 * self) as i32
+//     }
+// }
 
 fn get_stat_modify(poke_mod:PokemonStatModifier) -> f64 {
     use PokemonStatModifier::*;
@@ -84,7 +111,10 @@ fn pkmn_damage_formula(power:i32,
 /// Represents an active pokemon slot including current hp, status and boosts
 // #[allow(Display)]
 pub struct ActivePokemon {
-    pub pokemon: Pokemon,
+    pub pokemon: &'static Pokemon,
+    pub trained_stats: PokemonStats,
+    pub ability: PokemonAbility,
+    pub nature: PokemonNature,
     pub status: PokemonStatus,
     pub stat_modifier: [i8; 5], // temp exclude evasion & acc
     // exclude crit
@@ -96,20 +126,29 @@ pub struct ActivePokemon {
 // reason about this while being new to Rust.
 // So I'm just going to leave this as a copy for now and remember I'm duplicating
 impl ActivePokemon {
-    pub fn new (pokemon:Pokemon) -> Self {
-        Self {
-            current_hp: pokemon.base_stats.health, // copied first
-            pokemon: pokemon, // this is moved here
-            status: PokemonStatus::NONE,
-            stat_modifier: [0;5],
-        }
+    pub fn new (pokemon:&'static Pokemon, 
+        ability:PokemonAbility, 
+        nature:PokemonNature) -> Self {
+
+            let trained_stats = pokemon.base_stats.clone();
+            Self {
+                current_hp: pokemon.base_stats.hp, // copied first
+                pokemon: pokemon, // this is moved here
+                status: PokemonStatus::NONE,
+                stat_modifier: [0;5],
+                ability,
+                nature,
+                trained_stats,
+            }
     }
 
+    /// This will calculate the full stat spread including boosts
+    /// so calculate once and update if changes occur
     pub fn get_stat(&self, stat_type:PokemonStatName) -> i32 {
         let pkmn = &self.pokemon;
 
         let stat_array = [
-            pkmn.base_stats.health,
+            pkmn.base_stats.hp,
             pkmn.base_stats.attack,
             pkmn.base_stats.defense,
             pkmn.base_stats.sp_attack,
@@ -118,16 +157,13 @@ impl ActivePokemon {
         ];
 
         // pull trained stats
-        let final_arr = pkmn.trained_stats.as_ref().map(|s| 
-            [stat_array[0] + s.health,
-            stat_array[1] + s.attack,
-            stat_array[2] + s.defense,
-            stat_array[3] + s.sp_attack,
-            stat_array[4] + s.sp_defense,
-            stat_array[5] + s.speed]
-        ).unwrap_or(
-            stat_array
-        );
+        let final_arr = 
+            [stat_array[0] + self.trained_stats.hp,
+            stat_array[1] + self.trained_stats.attack,
+            stat_array[2] + self.trained_stats.defense,
+            stat_array[3] + self.trained_stats.sp_attack,
+            stat_array[4] + self.trained_stats.sp_defense,
+            stat_array[5] + self.trained_stats.speed];
 
         
         // NOTE I don't know if this single unwrap is better above or per call?
@@ -154,15 +190,17 @@ impl ActivePokemon {
 
     pub fn get_pkmn_type(&self) -> Vec<PokemonType> {
         // TODO: Calc this pokemon's current type based on more factors
-        let mut type_list = vec![self.pokemon.type1];
-        if self.pokemon.type2.is_some() {
-            type_list.push(self.pokemon.type2.unwrap());
-        }
-        type_list
+        // Filter out TYPELESS to handle the null/None case
+        self.pokemon.types.iter()
+            .filter(|&&t| t != PokemonType::TYPELESS)
+            .copied()
+            .collect()
     }
 
     pub fn get_type_mult(&self, move_type:PokemonType) -> f64 {
-        if move_type == PokemonType::TYPELESS {return 1.0};
+        if move_type == PokemonType::TYPELESS {
+            return 1.0
+        };
         let types = self.get_pkmn_type();
         let mut type_mult = 1.0;
         for type_def in types {
@@ -189,10 +227,17 @@ pub enum BattleAction<'battle> {
     BattleEffect // Other effects 
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum BattlePosition {
+    F1,
+    F2,
+    B1,
+    B2,
+}
+
 pub struct MoveAction<'battle> {
-    pub source: &'battle mut ActivePokemon,
-    pub targets: Vec<&'battle mut ActivePokemon>,
-    // TODO: Could move lifetime to a turn but uncessary
+    pub source: BattlePosition,
+    pub targets: Vec<BattlePosition>,
     pub pkm_move: &'battle PokemonMove,
 }
 
@@ -280,24 +325,31 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Add a move to the action queue
-    /// TODO: Should pass the indexes + move instead? Since I cant borrow mutables apparently
     pub fn queue_move (
-        // &'battle mut self, 
         action_queue: &mut VecDeque<BattleAction<'battle>>,
-        source_pkmn:&'battle mut ActivePokemon, 
+        source: BattlePosition,
         pmove:&'battle PokemonMove,
-        targets:Vec<&'battle mut ActivePokemon>, 
+        targets:Vec<BattlePosition>, 
         ) {
 
         let move_action: MoveAction = MoveAction{
-            source: source_pkmn,
-            targets: targets,
+            source,
+            targets,
             pkm_move: pmove
         };
 
         let new_action: BattleAction = BattleAction::Move(move_action);
 
         action_queue.push_back(new_action);
+    }
+
+    fn get_active_mut(&mut self, position: BattlePosition) -> Option<&mut ActivePokemon> {
+        match position {
+            BattlePosition::F1 => self.f_poke1.as_mut(),
+            BattlePosition::F2 => self.f_poke2.as_mut(),
+            BattlePosition::B1 => self.b_poke1.as_mut(),
+            BattlePosition::B2 => self.b_poke2.as_mut(),
+        }
     }
 
     fn can_perform_move(&self, pkm_move:&PokemonMove, move_action: &MoveAction  ) -> bool {
@@ -313,19 +365,22 @@ impl<'battle> BattleState<'battle> {
     /// Mutate the battle state
     fn perform_move(&mut self, move_action: &mut MoveAction) -> &Self {
         
-        let source_active = &move_action.source;
+        let source_active = self.get_active_mut(move_action.source).expect("source must exist");
         let power = move_action.pkm_move.power;
         let move_type = move_action.pkm_move.r#type;
-        
+
         let atk_stat = match move_action.pkm_move.category {
             Physical => source_active.get_stat(PokemonStatName::ATTACK),
             Special => source_active.get_stat(PokemonStatName::SPECIAL_ATTACK),
             _ => 1
         };
+        let is_stab = [Physical, Special].contains(&move_action.pkm_move.category)
+            && source_active.pokemon.has_type(move_action.pkm_move.r#type);
         let num_targets = move_action.targets.len();
 
         // Calculate everything per target from left->right
-        for target_pkmn in &mut move_action.targets {
+        for target_position in &move_action.targets {
+            let target_pkmn = self.get_active_mut(*target_position).expect("target must exist");
             
             let poke = &target_pkmn.pokemon;
             println!("Start calc for poke {poke}");
@@ -346,16 +401,6 @@ impl<'battle> BattleState<'battle> {
             let mut dmg_modifier_list:Vec<f32> = vec![];
 
             // Damage modifiers
-            let is_stab: bool = 
-            if [Physical, Special].contains(&move_action.pkm_move.category) {
-                // TODO: With Soak/Terastilization, use a type check based on active state
-                move_action.source.pokemon.has_type(move_action.pkm_move.r#type);
-                true
-            } else {
-                false
-            };
-
-            // TODO: I calc with separate since some moves care about type effectiveness
             let stab_mult = if is_stab { 1.5
                 // TODO: Adaptability & tera checks
             } else { 1.0 };
@@ -414,7 +459,7 @@ impl<'battle> BattleState<'battle> {
                     if !self.can_perform_move(&move_action.pkm_move, &move_action) {
                         continue
                     };
-                    println!("Target {} used {}!",
+                    println!("Target {:?} used {}!",
                         move_action.source, move_action.pkm_move.name);
                     self.perform_move(&mut move_action);
                 }
@@ -427,5 +472,29 @@ impl<'battle> BattleState<'battle> {
         }
         
 
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // use PokemonStatModifier::*;
+
+    // #[test]
+    // fn pokemon_stat_modifier_value() {
+    //     assert_eq!(PokemonStatModifier::ZERO, 0);
+    //     assert_eq!(PokemonStatModifier::MINUS_1.value(), 1);
+    //     assert_eq!(PokemonStatModifier::PLUS_1.value(), 1);
+    // }
+
+    #[test]
+    fn pokemon_stat_modifier_mul_flooring_both_sides() {
+        // stat check
+        assert_eq!(PokemonStatModifier::PLUS_1 * 30, (3.0/2.0 * 30.0) as i32);
+        assert_eq!(30 * PokemonStatModifier::PLUS_1, (3.0/2.0 * 30.0) as i32);
+
+        // floor testing
+        assert_eq!(PokemonStatModifier::MINUS_2 * 58, (2.0/4.0 * 58.0) as i32);
+        assert_eq!(58 * PokemonStatModifier::MINUS_2, (2.0/4.0 * 58.0) as i32);
     }
 }

@@ -9,22 +9,33 @@ pub struct I32Range {
     low: i32,
     high: i32
 }
-use strum_macros::{Display, AsRefStr};
+use strum_macros::{Display, AsRefStr, EnumString};
+use serde::Deserialize;
 
-#[derive(Display, AsRefStr)]
+ use std::sync::LazyLock as Lazy;
+
+#[derive(Display, AsRefStr, EnumString, Deserialize, 
+    Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum PokemonName {
     Garchomp,
-    Bisharp
+    Kingambit,
+    Tyranitar
 }
 
+#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PokemonNature {
     Brave
 }
 
+#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PokemonAbility {
-    SandForce
+    Sand_Force,
+    Rough_Skin,
+    Defiant,
+    Sand_Stream
 }
 
+#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PokemonItem {
     Garchompinite,
     SoftSand
@@ -33,20 +44,66 @@ pub enum PokemonItem {
 
 
 use crate::pokemon::types::PokemonType;
-use crate::pokemon::moves::PokemonMove;
+use crate::pokemon::moves::PokemonMoveName;
 use crate::pokemon::poke_stat::{PokemonStats, get_pkmn_stat};
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::str::FromStr;
+use serde::{Deserializer};
 
+
+#[derive(Debug)]
 pub struct Pokemon {
     pub name: PokemonName,
     pub base_stats: PokemonStats,
-    pub trained_stats: Option<PokemonStats>,
-    pub ability: PokemonAbility,
-    pub nature: PokemonNature,
-    pub learnset: Vec<PokemonMove>,
+    // pub trained_stats: Option<PokemonStats>,
+    pub abilities: Vec<PokemonAbility>,
+    // pub nature: PokemonNature,
+    pub learnset: Vec<PokemonMoveName>,
     pub weight: f64,
-    pub type1: PokemonType,
-    pub type2: Option<PokemonType>,
-    pub held_item: PokemonItem
+    pub types: Vec<PokemonType>,
+    // pub held_item: PokemonItem
+}
+
+impl<'de> Deserialize<'de> for Pokemon {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct PokemonData {
+            #[serde(default)]
+            name: Option<String>,
+            base_stats: PokemonStats,
+            trained_stats: Option<PokemonStats>,
+            abilities: Vec<PokemonAbility>,
+            #[serde(default)]
+            learnset: Option<Vec<PokemonMoveName>>,
+            weight: f64,
+            types: Vec<PokemonType>,
+        }
+
+        let data = PokemonData::deserialize(deserializer)?;
+        let mut types = data.types;
+        
+        // Pad with TYPELESS if only one type
+        while types.len() < 2 {
+            types.push(PokemonType::TYPELESS);
+        }
+        
+        // Ensure we don't have more than 2 types
+        types.truncate(2);
+
+        Ok(Pokemon {
+            name: PokemonName::Garchomp, // This will be overwritten by get_stat_json
+            base_stats: data.base_stats,
+            // trained_stats: data.trained_stats,
+            abilities: data.abilities,
+            learnset: data.learnset.unwrap_or_default(),
+            weight: data.weight,
+            types,
+        })
+    }
 }
 
 impl core::fmt::Display for Pokemon {
@@ -60,17 +117,59 @@ impl core::fmt::Display for Pokemon {
 impl Pokemon {
 
     pub fn has_type(&self, pkm_type:PokemonType) -> bool {
-        pkm_type == self.type1 || Some(pkm_type) == self.type2
+        self.types.iter().any(|&t| t == pkm_type && t != PokemonType::TYPELESS)
     }
 }
 
+// static POKE_JSON_FILENAME: &str = "src/data/pokemon.json";
+static POKE_JSON_STR: &str = include_str!("data/pokemon.json");
+pub static POKEMON_HASH: Lazy<HashMap<PokemonName, Pokemon>> = Lazy::new(|| get_stat_json());
+pub fn get_stat_json() -> HashMap<PokemonName, Pokemon> {
+    // let file = std::fs::File::open(POKE_JSON_FILENAME).expect("Failed to open stat json file");
+    // let reader = std::io::BufReader::new(file);
 
-pub fn get_pkmn(pkmn:PokemonName) -> Pokemon {
-    match pkmn {
-        PokemonName::Garchomp => get_garchomp(),
-        PokemonName::Bisharp => unimplemented!()
+    
+    // First deserialize as a raw HashMap<String, Value>
+    // let raw_map: HashMap<String, serde_json::Value> = serde_json::from_reader(reader)
+    //     .expect("Failed to parse pokemon json file");
+
+    let raw_map: HashMap<String, serde_json::Value> = serde_json::from_str(POKE_JSON_STR)
+        .expect("Failed to parse pokemon json file");
+    
+    // Then manually deserialize each entry and filter out those with unknown pokemon names
+    let poke_map: HashMap<PokemonName, Pokemon> = raw_map.into_iter()
+        .filter_map(|(k, v)| {
+            // Try to parse the pokemon name
+            match PokemonName::from_str(&k) {
+                Ok(name) => {
+                    // Try to deserialize the pokemon data
+                    match serde_json::from_value::<Pokemon>(v) {
+                        Ok(mut pokemon) => {
+                            pokemon.name = name;
+                            Some((name, pokemon))
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to deserialize pokemon '{}': {}", k, e);
+                            None
+                        }
+                    }
+                }
+                Err(_) => {
+                    eprintln!("Warning: Unknown pokemon '{}' in JSON file", k);
+                    None
+                }
+            }
+        })
+        .collect();
+    poke_map
+}
+
+
+pub fn get_pkmn(pkmn:PokemonName) -> &'static Pokemon {
+    match POKEMON_HASH.get(&pkmn) {
+        Some(pokemon) => pokemon,
+        None => unimplemented!("{} data not implemented yet", pkmn),
     }
-
 }
 
 // TODO: Put this in a data file
@@ -78,13 +177,12 @@ fn get_garchomp() -> Pokemon {
     Pokemon {
         name: PokemonName::Garchomp,
         base_stats: get_pkmn_stat(PokemonName::Garchomp),
-        trained_stats: None,
-        ability: PokemonAbility::SandForce,
-        nature: PokemonNature::Brave,
+        // trained_stats: None,
+        abilities: vec![PokemonAbility::Sand_Force],
+        // nature: PokemonNature::Brave,
         learnset: vec![],
         weight: 95.0,
-        type1: PokemonType::DRAGON,
-        type2: Some(PokemonType::GROUND),
-        held_item: PokemonItem::SoftSand
+        types: vec![PokemonType::DRAGON, PokemonType::GROUND],
+        // held_item: PokemonItem::SoftSand
     }
 }

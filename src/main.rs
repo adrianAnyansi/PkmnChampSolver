@@ -1,19 +1,20 @@
-use crate::battle::ActivePokemon;
-use crate::battle::BattleState;
+use crate::battle::{ActivePokemon, BattlePosition, BattleState};
 use crate::pokemon::types::{PokemonType, get_type_multipler};
-
-fn main() {
-    println!("Hello, world!");
-
-    // analyze();
-    garchomp_fight_test();
-}
 
 mod battle;
 mod pokemon;
 // use crate::pokemon::poke_stat::PokemonStats;
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::PokemonMoveName;
+
+fn main() {
+    println!("Pokemon Solver starting up!");
+
+    // analyze();
+    garchomp_fight_test();
+    // make_pokemon_from_file();
+    println!("Pokemon Solver complete!");
+}
 
 fn basic_poke() {
     use crate::pokemon::Pokemon;
@@ -45,35 +46,39 @@ fn analyze() {
     // poke_str = "Bisharp"
 }
 
+fn make_pokemon_from_file() {
+    // let poke_vec = pokemon::get_stat_json();
+    let poke_vec = pokemon::POKEMON_HASH.get(&PokemonName::Garchomp).unwrap();
+    println!("Pokemon from json: {poke_vec:#?}");
+}
+
 fn garchomp_fight_test() {
     let mut bs = BattleState::new();                  
 
-    let mut garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
-    let mut bis = pokemon::get_pkmn(PokemonName::Bisharp);
+    let garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
+    let bis = pokemon::get_pkmn(PokemonName::Kingambit);
     let draco_move = pokemon::moves::get_move(PokemonMoveName::Draco_Meteor);
 
-    garchomp.learnset.push(draco_move);
+    // garchomp.learnset.push(draco_move);
     
-    bs.f_poke1 = Some(ActivePokemon::new(garchomp));
-    bs.b_poke1 = Some(ActivePokemon::new(bis));
+    bs.f_poke1 = Some(ActivePokemon::new(garchomp, pokemon::PokemonAbility::Sand_Force, pokemon::PokemonNature::Brave));
+    bs.b_poke1 = Some(ActivePokemon::new(bis, pokemon::PokemonAbility::Sand_Force, pokemon::PokemonNature::Brave));
 
     println!("Printing the current battle state:");
     println!("{}", bs.get_print_state());
 
     // queue
-    let mut act_garchomp = bs.f_poke1.unwrap();
-    let mut act_bis = bs.b_poke1.unwrap();
-    
     BattleState::queue_move(
         &mut bs.action_queue,
-        &mut act_garchomp, 
-        &garchomp.learnset[0],
-        vec![&mut act_bis]
+        BattlePosition::F1,
+        &draco_move,
+        vec![BattlePosition::B1],
     );
     // & act_garchomp.pokemon.learnset[0]);
 
     // do move
     bs.perform_turn();
+    // There should be a print statement of the move being performed
 
     // print state again
     println!("Printing the current battle state:");
