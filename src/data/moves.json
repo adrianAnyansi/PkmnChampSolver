@@ -1,0 +1,13 @@
+[
+    {
+        "name": "Earthquake",
+        "type": "GROUND",
+        "power": 100,
+        "category": "Physical",
+        "accuracy": 1.0,
+        "pp": 10,
+        "contact": false,
+        "priority": 0,
+        "target_type": "ALL"
+    }
+]

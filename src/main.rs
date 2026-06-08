@@ -3,6 +3,7 @@ use crate::pokemon::types::{PokemonType, get_type_multipler};
 
 mod battle;
 mod pokemon;
+mod math;
 // use crate::pokemon::poke_stat::PokemonStats;
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::PokemonMoveName;
@@ -36,12 +37,12 @@ fn analyze() {
     println!("{type_a} attacks on {type_b} do x{type_result} damage");
 
     // let mut poke_str = "Garchomp";
-    let poke = pokemon::poke_stat::get_pkmn_stat(PokemonName::Garchomp);
+    // let poke = pokemon::poke_stat::get_pkmn_stat(PokemonName::Garchomp);
 
-    println!("Pokemon Attack stat is {attack}!", attack = poke.attack);
+    // println!("Pokemon Attack stat is {attack}!", attack = poke.attack);
 
-    let garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
-    println!("Pokemon display {}", garchomp);
+    // let garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
+    // println!("Pokemon display {}", garchomp);
 
     // poke_str = "Bisharp"
 }
@@ -61,8 +62,12 @@ fn garchomp_fight_test() {
 
     // garchomp.learnset.push(draco_move);
     
-    bs.f_poke1 = Some(ActivePokemon::new(garchomp, pokemon::PokemonAbility::Sand_Force, pokemon::PokemonNature::Brave));
-    bs.b_poke1 = Some(ActivePokemon::new(bis, pokemon::PokemonAbility::Sand_Force, pokemon::PokemonNature::Brave));
+    bs.f_poke1 = Some(ActivePokemon::new(garchomp, 
+        pokemon::PokemonAbility::Sand_Force, 
+        pokemon::poke_stat::PokemonNature::Brave, None));
+    bs.b_poke1 = Some(ActivePokemon::new(bis, 
+        pokemon::PokemonAbility::Sand_Force, 
+        pokemon::poke_stat::PokemonNature::Brave, None));
 
     println!("Printing the current battle state:");
     println!("{}", bs.get_print_state());

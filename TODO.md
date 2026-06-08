@@ -8,39 +8,40 @@ So the goal is this
     A bunch of Pokemon+stats, items, mechanics etc.
 **Output:**
     A bunch of teams that have a high win-rate and the routes taken.
+    Probably sent to file
 
-But a smaller goal is
-**Input:**
-    2-6 pokemon on 2 teams
+I'm aiming to meet the smaller goal of sending 2 teams and getting all permutations
 
-I'm going to take the idea of getting this Pokemon as an input
-Then I need to build the battle simulator which will be the hard bit
 
+## TODO
+I want to finish the current poke abilities and moves to flesh out how scripting will work
+Will likely have an immediate event queue for things
+
+### Abilities
+Sand-Stream setting up weather
+Rough Skin doing additional damage
+Add Basculegion for Adapatability, Swift Swim & Mold Breaker?
+Add Sneasler for Unburden
+
+### Moves
+Secondary effects
+- Flinch
+- Stat changes
+- Priority changes (Fake Out, Aqua Jet)
+- Hyper Beam/secondary turn stuff
+- Status changes
+- Protect
+- Sandstorm (pure status move)
+
+
+- Active Pokemon should combine the trained/base stats to 1 object to be easy
+- Moves json, and start working on scripting
+- MoveResults thought
+    - Faint
+    - Damage
+- Start thinking about specific triggers for abilities and etc
 
 ## Today
-- Create a Garchomp with stats, no item, with Draco Meteor
-- 2nd pokemon will be Bisharp
-- Create a battle stat, then calculate the battle-event of attacking
-- Output the pokemon state
-
-For like Sand Force, it needs to check the battle state. So smth like:
-1. Garchomp does Draco Meteor
-2. Ability is checked, has a move modifier
-3. Ability checks the Battle state for Weather
-4. Ability modifies the move strength
-5. Move continues the stuff
-
-The battle logic is gonna be complicated, so I'm going to build this step by step. I think I'll group abilities & traits to understand what affects what.
-
-
-Expanding the current test case:
-1. Add Draco to the action queue-
-2. Pop the action queue, evaluate the move
-3. Check all conditions that will prevent the move from occurring (choice, encore, ability block)
-4. Check modifications to the move, target, power, etc.
-
-I want to get a list of moves so I have a generic case somewhat.
-It's frustating
 
 
 

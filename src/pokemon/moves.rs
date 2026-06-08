@@ -20,7 +20,8 @@ pub enum PokemonMoveTarget {
     SELF,
     OPPONENT_ALL,
     ALLY_ALL,
-    ANY
+    ANY,
+    ALL
 }
 
 #[allow(dead_code)]
@@ -128,12 +129,3 @@ pub fn get_move(pkmn_move:PokemonMoveName) -> PokemonMove {
         _ => panic!("Move has not been implemented!")
     }
 }
-
-// pub fn get_pokemon_move_eff(pkmn_move:PokemonMoveName) -> {
-//     match pkmn_move {
-//         PokemonMoveName::Draco_Meteor => MoveSecondEffect {
-            
-//         }
-        
-//     }
-// }

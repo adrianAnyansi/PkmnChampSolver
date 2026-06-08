@@ -3,7 +3,9 @@
 
 use std::{collections::VecDeque};
 
-use crate::pokemon::{Pokemon, PokemonAbility, PokemonNature, moves::{PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
+use crate::{math::{div_and_floor, mult_and_round}, pokemon::{Pokemon, PokemonAbility, moves::{PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat}};
+use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
+use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
 
 #[allow(dead_code)]
 pub enum PokemonStatus {
@@ -15,96 +17,16 @@ pub enum PokemonStatus {
     POISONED,
 }
 
-#[allow(dead_code)]
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy)]
-enum PokemonStatModifier {
-    ZERO = 0,
-    MINUS_1 = -1,
-    MINUS_2 = -2,
-    MINUS_3 = -3,
-    MINUS_4 = -4,
-    MINUS_5 = -5,
-    MINUS_6 = -6,
-    PLUS_1 = 1,
-    PLUS_2 = 2,
-    PLUS_3 = 3,
-    PLUS_4 = 4,
-    PLUS_5 = 5,
-    PLUS_6 = 6
-}
-
-// TODO: I would like a trait that can be applied to stat modifiers and etc
-// This way every multiply is natively handled in order without thought
-/// Convert the enum modifier to a float and apply to int with floor
-impl std::ops::Mul<i32> for PokemonStatModifier {
-    type Output = i32;
-
-    fn mul(self, base_int: i32) -> Self::Output {
-        let self_value = get_stat_modify(self);
-        let rhs_value = base_int as f64;
-        (self_value * rhs_value) as i32
-    }
-}
-
-impl std::ops::Mul<PokemonStatModifier> for i32 {
-    type Output = i32;
-
-    fn mul(self, rhs: PokemonStatModifier) -> Self::Output {
-        rhs * self
-    }
-}
-// trait FloAorInteger {
-//     fn floor_integer(&self, base_int:i32) -> i32 {
-//         (base_int as f64 * self) as i32
-//     }
-// }
-
-fn get_stat_modify(poke_mod:PokemonStatModifier) -> f64 {
-    use PokemonStatModifier::*;
-
-    match poke_mod {
-        ZERO => 1.0,
-        MINUS_1 => 2.0/3.0,
-        MINUS_2 => 2.0/4.0,
-        MINUS_3 => 2.0/5.0,
-        MINUS_4 => 2.0/6.0,
-        MINUS_5 => 2.0/7.0,
-        MINUS_6 => 2.0/8.0,
-        PLUS_1  => 3.0/2.0,
-        PLUS_2  => 4.0/2.0,
-        PLUS_3  => 5.0/2.0,
-        PLUS_4  => 6.0/2.0,
-        PLUS_5  => 7.0/2.0,
-        PLUS_6  => 8.0/2.0,
-    }
-}
-
-impl PokemonStatModifier {
-    pub fn value () -> i32 {
-        return 1
-    }
-}
-
+static LEVEL: i32 = 50;
 fn pkmn_damage_formula(power:i32,
     atk_stat:i32, def_stat:i32) -> i32 {
-    const LEVEL:i32 = 50;
 
-    #[allow(unused_parens)]
-    let final_damage = (
-        (((2 * LEVEL)/5 + 2) 
-            * power * atk_stat / def_stat) 
-        / 50 + 2
-        // * targets - multiple targets is 0.75
-        // * weather boost
-        // * GlaiveRush
-        // * critical (if true, 1.5)
-        // * random factor (85-100 / 100 int)
-        // STAB
-        // Type effectiveness
-        // burn
-        // other
-    );
+    let level_dmg = (2 * LEVEL) / 5 + 2;
+    let power_dmg = level_dmg * power * atk_stat;
+    let top_damage = div_and_floor(power_dmg, def_stat);
+    let non_mult_dmg = div_and_floor(top_damage, 50) + 2;
+    let final_damage = non_mult_dmg;
+    // See https://bulbapedia.bulbagarden.net/wiki/Damage#Generation_V_onward for damage formula
     final_damage
 }
 
@@ -116,7 +38,7 @@ pub struct ActivePokemon {
     pub ability: PokemonAbility,
     pub nature: PokemonNature,
     pub status: PokemonStatus,
-    pub stat_modifier: [i8; 5], // temp exclude evasion & acc
+    pub stat_modifier: [PokemonStatModifier; 5], // temp exclude evasion & acc
     // exclude crit
     current_hp: i32,
 }
@@ -128,63 +50,37 @@ pub struct ActivePokemon {
 impl ActivePokemon {
     pub fn new (pokemon:&'static Pokemon, 
         ability:PokemonAbility, 
-        nature:PokemonNature) -> Self {
+        nature:PokemonNature,
+        trained_stats: Option<PokemonStats>) -> Self {
 
-            let trained_stats = pokemon.base_stats.clone();
+            // let combined_stats = trained_stats.clone() + pokemon.base_stats.clone();
+            let max_hp = get_full_stat(&pokemon.base_stats, trained_stats.as_ref(), PokemonStatName::HEALTH);
+            let trained_stat = trained_stats.unwrap_or_else(|| PokemonStats::empty()); // placeholder
             Self {
-                current_hp: pokemon.base_stats.hp, // copied first
-                pokemon: pokemon, // this is moved here
+                current_hp: max_hp, // copied first
                 status: PokemonStatus::NONE,
-                stat_modifier: [0;5],
+                stat_modifier: [PokemonStatModifier::ZERO; 5],
                 ability,
                 nature,
-                trained_stats,
+                trained_stats: trained_stat,
+                pokemon: pokemon, // this is moved here
             }
     }
 
     /// This will calculate the full stat spread including boosts
     /// so calculate once and update if changes occur
-    pub fn get_stat(&self, stat_type:PokemonStatName) -> i32 {
+    pub fn get_active_stat(&self, stat_type:PokemonStatName) -> i32 {
         let pkmn = &self.pokemon;
 
-        let stat_array = [
-            pkmn.base_stats.hp,
-            pkmn.base_stats.attack,
-            pkmn.base_stats.defense,
-            pkmn.base_stats.sp_attack,
-            pkmn.base_stats.sp_defense,
-            pkmn.base_stats.speed,
-        ];
+        let comb_stat = get_full_stat(&pkmn.base_stats, Some(&self.trained_stats), stat_type);
 
-        // pull trained stats
-        let final_arr = 
-            [stat_array[0] + self.trained_stats.hp,
-            stat_array[1] + self.trained_stats.attack,
-            stat_array[2] + self.trained_stats.defense,
-            stat_array[3] + self.trained_stats.sp_attack,
-            stat_array[4] + self.trained_stats.sp_defense,
-            stat_array[5] + self.trained_stats.speed];
-
-        
-        // NOTE I don't know if this single unwrap is better above or per call?
-        // Pull stat boosts
         match stat_type {
-            PokemonStatName::HEALTH => final_arr[0],
-            PokemonStatName::ATTACK => {
-                final_arr[1] * self.stat_modifier[0] as i32
-            },
-            PokemonStatName::DEFENSE => {
-                final_arr[2] * self.stat_modifier[1] as i32
-            },
-            PokemonStatName::SPECIAL_ATTACK => {
-                final_arr[3] * self.stat_modifier[2] as i32
-            },
-            PokemonStatName::SPECIAL_DEFENSE => {
-                final_arr[4] * self.stat_modifier[3] as i32
-            },
-            PokemonStatName::SPEED => {
-                final_arr[5] * self.stat_modifier[4] as i32
-            },
+            PokemonStatName::HEALTH => comb_stat,
+            _ => {
+                // offset by 1 for the stat modifier
+                let stat_idx = (stat_type as usize) - 1;
+                comb_stat * self.stat_modifier[stat_idx]
+            }
         }
     }
 
@@ -252,7 +148,8 @@ pub struct MoveResult {
 pub enum MoveResultEnum {
     DAMAGE,
     FAINTED,
-    ABILITY_ACTIVATE
+    ABILITY_ACTIVATE,
+    SECOND_EFFECT
 }
 
 /// Represents the state of the battle between any action/resolve.
@@ -299,14 +196,14 @@ impl<'battle> BattleState<'battle> {
     }
 
     fn get_front_poke(&self) -> String {
-        format!("Front: {} {}", 
+        format!("{} {}", 
             BattleState::get_default_poke_name(&self.f_poke1),
             BattleState::get_default_poke_name(&self.f_poke2))
     }
 
     pub fn get_print_state(&self) -> String {
 
-        let back_row_str = format!("Back: {} {}", 
+        let back_row_str = format!("{} {}", 
             BattleState::get_default_poke_name(&self.b_poke1),
             BattleState::get_default_poke_name(&self.b_poke2));
 
@@ -317,9 +214,10 @@ impl<'battle> BattleState<'battle> {
 
         format!(
             "*Battle State* Turn: {turn_num}\n\
-            \t\t\t{back_row_str}\n\
-            {}\n\
-            Field: {field_state}",
+            Back: \t\t{back_row_str}\n\
+            Front: {}\n\
+            Field: {field_state}\n\
+            ----------------------------",
             self.get_front_poke(),
         )
     }
@@ -370,8 +268,8 @@ impl<'battle> BattleState<'battle> {
         let move_type = move_action.pkm_move.r#type;
 
         let atk_stat = match move_action.pkm_move.category {
-            Physical => source_active.get_stat(PokemonStatName::ATTACK),
-            Special => source_active.get_stat(PokemonStatName::SPECIAL_ATTACK),
+            Physical => source_active.get_active_stat(PokemonStatName::ATTACK),
+            Special => source_active.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
             _ => 1
         };
         let is_stab = [Physical, Special].contains(&move_action.pkm_move.category)
@@ -383,55 +281,60 @@ impl<'battle> BattleState<'battle> {
             let target_pkmn = self.get_active_mut(*target_position).expect("target must exist");
             
             let poke = &target_pkmn.pokemon;
-            println!("Start calc for poke {poke}");
+            println!("Start calc for target {poke}");
 
             // TODO: Calculate crit, including status and etc effects
             // let is_crit = false;
 
             let def_stat = match &move_action.pkm_move.category {
-                Physical => target_pkmn.get_stat(PokemonStatName::DEFENSE),
-                Special => target_pkmn.get_stat(PokemonStatName::SPECIAL_DEFENSE),
+                Physical => target_pkmn.get_active_stat(PokemonStatName::DEFENSE),
+                Special => target_pkmn.get_active_stat(PokemonStatName::SPECIAL_DEFENSE),
                 _ => 1
             };
 
-            let def_dmg = pkmn_damage_formula(power, atk_stat, def_stat);
+            let mut def_dmg = pkmn_damage_formula(power, atk_stat, def_stat);
             // TODO: I'll do this later
             // let rng_roll = [0.85, 100.0]; 
 
-            let mut dmg_modifier_list:Vec<f32> = vec![];
+            let mut dmg_modifier_list:VecDeque<f64> = VecDeque::new();
 
             // Damage modifiers
             let stab_mult = if is_stab { 1.5
                 // TODO: Adaptability & tera checks
             } else { 1.0 };
 
-            dmg_modifier_list.push(stab_mult);
+            dmg_modifier_list.push_back(stab_mult);
             
             // target multiplier
-            let target_mult = if num_targets > 1 {0.75} else {1.0};
-            dmg_modifier_list.push(target_mult);
+            let multi_target_mult = if num_targets > 1 {0.75} else {1.0};
+            dmg_modifier_list.push_back(multi_target_mult);
             
             // Type multiplier
-            let type_mult = target_pkmn.get_type_mult(move_type) as f32;
+            let def_type_mult = target_pkmn.get_type_mult(move_type) as f64;
             // TODO: If 0, count as not applicable
-            dmg_modifier_list.push(type_mult);
+            dmg_modifier_list.push_back(def_type_mult);
             
             // status modifiers, burn
 
             // other modifiers
             
             // Finally
+            while let Some(modifier) = dmg_modifier_list.pop_front() {
+                def_dmg = mult_and_round(def_dmg, modifier);
+            };
             let calc_dmg = def_dmg;
             
             // Subtract health, then roll and apply secondary effects
             // target_pkmn.stat_modifier[0] = 2;
-            let final_hp = (target_pkmn.current_hp-calc_dmg).min(0);
+            let final_hp = (target_pkmn.current_hp-calc_dmg).max(0);
             
             // Resolve effects/abilties/etc based on HP
             // target_pkmn
             target_pkmn.current_hp = final_hp;
             // Resolve fainting
 
+            // Return move result
+            println!("{poke} took {calc_dmg} damage");
 
         
         }
@@ -446,6 +349,7 @@ impl<'battle> BattleState<'battle> {
 
     pub fn perform_turn(&mut self) {
         // TODO: sort action queue
+
         // Can you perform this move in this battle state
         while self.action_queue.len() > 0 {
             
@@ -459,8 +363,9 @@ impl<'battle> BattleState<'battle> {
                     if !self.can_perform_move(&move_action.pkm_move, &move_action) {
                         continue
                     };
-                    println!("Target {:?} used {}!",
-                        move_action.source, move_action.pkm_move.name);
+                    println!("{} used {}!",
+                        self.get_active_mut(move_action.source).unwrap(), 
+                        move_action.pkm_move.name);
                     self.perform_move(&mut move_action);
                 }
                 _ => {
@@ -475,26 +380,32 @@ impl<'battle> BattleState<'battle> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    // use PokemonStatModifier::*;
 
-    // #[test]
-    // fn pokemon_stat_modifier_value() {
-    //     assert_eq!(PokemonStatModifier::ZERO, 0);
-    //     assert_eq!(PokemonStatModifier::MINUS_1.value(), 1);
-    //     assert_eq!(PokemonStatModifier::PLUS_1.value(), 1);
-    // }
+mod test {
+    use crate::pokemon::poke_stat::PokemonStatName::{SPECIAL_ATTACK, SPECIAL_DEFENSE};
+
+use super::*;
 
     #[test]
-    fn pokemon_stat_modifier_mul_flooring_both_sides() {
-        // stat check
-        assert_eq!(PokemonStatModifier::PLUS_1 * 30, (3.0/2.0 * 30.0) as i32);
-        assert_eq!(30 * PokemonStatModifier::PLUS_1, (3.0/2.0 * 30.0) as i32);
+    fn test_move_calc() {
+        // Using the test of Garchomp Draco Meteor on Kingambit
+        let base_stat = PokemonStats {
+            hp: 0,
+            attack: 0,
+            defense: 0,
+            sp_attack: 80,
+            sp_defense: 85,
+            speed: 0
+        };
+        let power = 130;
+        let atk_stat = get_full_stat(&base_stat, None, SPECIAL_ATTACK);
+        let def_stat = get_full_stat(&base_stat, None, SPECIAL_DEFENSE);
+        let dmg = pkmn_damage_formula(power, atk_stat, def_stat);
 
-        // floor testing
-        assert_eq!(PokemonStatModifier::MINUS_2 * 58, (2.0/4.0 * 58.0) as i32);
-        assert_eq!(58 * PokemonStatModifier::MINUS_2, (2.0/4.0 * 58.0) as i32);
+        // stab bonus
+        let f_dmg = mult_and_round(dmg, 1.5);
+        // type_multiplier
+        let f2_dmg = mult_and_round(f_dmg, 0.5);
+        assert_eq!(f2_dmg, 42);
     }
 }

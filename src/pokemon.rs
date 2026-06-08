@@ -22,10 +22,7 @@ pub enum PokemonName {
     Tyranitar
 }
 
-#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
-pub enum PokemonNature {
-    Brave
-}
+
 
 #[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PokemonAbility {
@@ -45,7 +42,7 @@ pub enum PokemonItem {
 
 use crate::pokemon::types::PokemonType;
 use crate::pokemon::moves::PokemonMoveName;
-use crate::pokemon::poke_stat::{PokemonStats, get_pkmn_stat};
+use crate::pokemon::poke_stat::{PokemonStats};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::str::FromStr;
@@ -108,9 +105,9 @@ impl<'de> Deserialize<'de> for Pokemon {
 
 impl core::fmt::Display for Pokemon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // let pk_name = self.name
-        let item_str = format!("@ {}", "item_name"); //self.held_item
-        write!(f, "{} {}", self.name, item_str)
+        // TODO: With all info moved to Active, name should be fine right now
+        // let detail_str = "";
+        write!(f, "{}", self.name)
     }
 }
 
@@ -169,20 +166,5 @@ pub fn get_pkmn(pkmn:PokemonName) -> &'static Pokemon {
     match POKEMON_HASH.get(&pkmn) {
         Some(pokemon) => pokemon,
         None => unimplemented!("{} data not implemented yet", pkmn),
-    }
-}
-
-// TODO: Put this in a data file
-fn get_garchomp() -> Pokemon {
-    Pokemon {
-        name: PokemonName::Garchomp,
-        base_stats: get_pkmn_stat(PokemonName::Garchomp),
-        // trained_stats: None,
-        abilities: vec![PokemonAbility::Sand_Force],
-        // nature: PokemonNature::Brave,
-        learnset: vec![],
-        weight: 95.0,
-        types: vec![PokemonType::DRAGON, PokemonType::GROUND],
-        // held_item: PokemonItem::SoftSand
     }
 }
