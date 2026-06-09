@@ -17,14 +17,6 @@ fn main() {
     println!("Pokemon Solver complete!");
 }
 
-fn basic_poke() {
-    use crate::pokemon::Pokemon;
-    // Make a basic pokemon
-    // let poke = Pokemon {
-    //     name: PokemonName::Garchomp,
-    // }
-}
-
 
 fn analyze() {
     // TODO: take some input

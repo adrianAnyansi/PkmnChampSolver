@@ -116,6 +116,20 @@ pub enum PokemonStatName {
     SPEED
 }
 
+impl core::fmt::Display for PokemonStatName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PokemonStatName::*;
+        match self {
+            HEALTH => write!(f, "Health"),
+            ATTACK => write!(f, "Attack"),
+            DEFENSE => write!(f, "Defense"),
+            SPECIAL_ATTACK => write!(f, "Special Attack"),
+            SPECIAL_DEFENSE => write!(f, "Special Defense"),
+            SPEED => write!(f, "Speed"),
+        }
+    }
+}
+
 
 pub fn gen_pkmn_stat(
     hp:i32, atk:i32, def:i32, satk:i32, sdef:i32, spd:i32
@@ -128,7 +142,7 @@ pub fn gen_pkmn_stat(
 
 #[allow(dead_code)]
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PokemonStatModifier {
     ZERO = 0,
     MINUS_1 = -1,
@@ -166,6 +180,23 @@ impl std::ops::Mul<PokemonStatModifier> for i32 {
     }
 }
 
+impl std::ops::Add for PokemonStatModifier {
+    type Output = PokemonStatModifier;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let val = self as i32 + rhs as i32;
+        PokemonStatModifier::cast_int(val)
+    }
+}
+
+impl std::ops::AddAssign for PokemonStatModifier {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
+
+use PokemonStatModifier::*;
 impl PokemonStatModifier {
     pub fn mult (&self) -> f64 {
         use PokemonStatModifier::*;
@@ -184,6 +215,17 @@ impl PokemonStatModifier {
             PLUS_5  => 7.0/2.0,
             PLUS_6  => 8.0/2.0,
         }
+    }
+
+    const ORDERED: [PokemonStatModifier; 13] = [
+        MINUS_6, MINUS_5, MINUS_4, MINUS_3, MINUS_2, MINUS_1, 
+        ZERO,
+        PLUS_1, PLUS_2, PLUS_3, PLUS_4, PLUS_5, PLUS_6, 
+    ];
+    pub fn cast_int(int_val:i32) -> PokemonStatModifier {
+        let clamped_val = (int_val.min(6).max(-6) + 6) as usize;
+        // TODO: This is not a safe index technically from the compiler viewpoint
+        PokemonStatModifier::ORDERED[clamped_val]
     }
 }
 
@@ -229,7 +271,7 @@ pub enum PokemonNature {
 }
 
 
-use crate::math::mult_and_round;
+use crate::{math::mult_and_round, pokemon::poke_stat::PokemonStatName::HEALTH};
 static NATURE_MODIFIER: f64 = 1.1;
 impl PokemonNature {
 

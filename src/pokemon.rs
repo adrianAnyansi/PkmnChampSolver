@@ -12,7 +12,7 @@ pub struct I32Range {
 use strum_macros::{Display, AsRefStr, EnumString};
 use serde::Deserialize;
 
- use std::sync::LazyLock as Lazy;
+use std::sync::LazyLock as Lazy;
 
 #[derive(Display, AsRefStr, EnumString, Deserialize, 
     Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -23,13 +23,16 @@ pub enum PokemonName {
 }
 
 
-
+#[allow(non_camel_case_types)]
 #[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PokemonAbility {
     Sand_Force,
     Rough_Skin,
     Defiant,
-    Sand_Stream
+    Sand_Stream,
+    Unnerve,
+    Supreme_Overlord,
+    Sand_Veil
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]

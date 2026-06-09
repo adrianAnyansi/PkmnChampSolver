@@ -12,6 +12,10 @@ So the goal is this
 
 I'm aiming to meet the smaller goal of sending 2 teams and getting all permutations
 
+## General
+Here's the thing. I do want to get all ranges when it comes to doing calculations. Currently I just have performing 1 move, but performing the entire battle will require all the ranges & the branching- which I straight up don't want to do.
+It's hard enough to consider the ability/item/move resolving right not.
+My plan is to just have some random moves trigger, and then return the result
 
 ## TODO
 I want to finish the current poke abilities and moves to flesh out how scripting will work
@@ -42,6 +46,8 @@ Secondary effects
 - Start thinking about specific triggers for abilities and etc
 
 ## Today
+Do the 2nd effect of sp_atk drop on hit
+Then Impl Kowtow Cleave, accuracy modifier and the Rough Skin calculation
 
 
 

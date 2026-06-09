@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{BattleAction, BattleState, MoveAction}, pokemon::moves::{PokemonMoveName::Draco_Meteor, PokemonMoveTarget::OPPONENT}};
+use crate::{battle::{BattleAction, BattleState, MoveAction}, pokemon::{moves::{PokemonMoveName::Draco_Meteor, BattleTarget::OPPONENT}, poke_stat::{PokemonStatModifier, PokemonStatName}}};
 use crate::pokemon::types::PokemonType;
 
 /// Move type and additional information
@@ -14,13 +14,24 @@ pub enum PokemonMoveCategory {
     Status
 }
 
-pub enum PokemonMoveTarget {
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy)]
+pub enum BattleTarget {
+    /// Target 1 opponent
     OPPONENT,
+    /// Target your ally but not yourself
     ALLY,
+    /// Target any ally including self
+    ALLY_ANY,
+    /// Target self only
     SELF,
+    /// Target both opponents
     OPPONENT_ALL,
+    /// Target you and your ally
     ALLY_ALL,
+    /// Target anyone on the field
     ANY,
+    /// Target all users except self
     ALL
 }
 
@@ -35,7 +46,14 @@ pub struct PokemonMove {
     pp: i32,
     pub priority: i8,
     contact: bool,
-    pub target_type: PokemonMoveTarget
+    pub target_type: BattleTarget
+}
+
+/// Indicates a change in stat boosts
+pub struct StatChange {
+    pub target_type: BattleTarget,
+    pub name: PokemonStatName,
+    pub change: PokemonStatModifier
 }
 
 /// Effects incurred by a move
@@ -66,7 +84,7 @@ impl PokemonMove {
     }
 
     pub fn set_attr(mut self,
-        power:i32, acc:f64, target:PokemonMoveTarget 
+        power:i32, acc:f64, target:BattleTarget 
     ) -> Self {
         self.power = power;
         self.accuracy = acc;
@@ -74,15 +92,23 @@ impl PokemonMove {
         self
     }
 
-    pub fn after_success (&self, battle_state:&BattleState) {
+    pub fn after_hit (&self, 
+        battle_state:&BattleState) -> Vec<BattlePreAction> {
         use PokemonMoveName::*;
-        // let move_result = None; // Move result here
         match self.name {
             Draco_Meteor => {
                 // get move_performer
-                // reduce sp_atk by 2 if possible
+                // TODO: Determine from JSON
+                let stat_change = StatChange {
+                    target_type: BattleTarget::SELF,
+                    name: PokemonStatName::SPECIAL_ATTACK, 
+                    change: PokemonStatModifier::MINUS_2
+                };
+                let v_stat = vec![stat_change];
+                vec![BattlePreAction::Stat(v_stat)]
             },
-            _ => return // no effect
+            // TODO: Make a generator that takes a list of default stuff and returns
+            _ => return vec![] // no effect
         }
     }
 
@@ -98,6 +124,9 @@ impl PokemonMove {
     }
 }
 
+pub enum BattlePreAction {
+    Stat(Vec<StatChange>)
+}
 
 #[allow(dead_code, non_camel_case_types)]
 #[derive(Display, Debug, Deserialize)]
