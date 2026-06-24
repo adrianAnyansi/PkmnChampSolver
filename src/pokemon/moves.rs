@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{BattleAction, BattleState, MoveAction}, pokemon::{moves::{PokemonMoveName::Draco_Meteor, BattleTarget::OPPONENT}, poke_stat::{PokemonStatModifier, PokemonStatName}}};
+use crate::{battle::{self, AddEffect, BattleAction, BattleEffect::{self, Flinch}, BattleState, MoveAction}, pokemon::{moves::{BattleTarget::OPPONENT, PokemonMoveName::{Draco_Meteor, Kowtow_Cleave}}, poke_stat::{PokemonStatModifier, PokemonStatName}}};
 use crate::pokemon::types::PokemonType;
 
 /// Move type and additional information
@@ -32,7 +32,9 @@ pub enum BattleTarget {
     /// Target anyone on the field
     ANY,
     /// Target all users except self
-    ALL
+    ALL,
+    /// Target all users including self
+    ALL_SELF
 }
 
 #[allow(dead_code)]
@@ -53,8 +55,12 @@ pub struct PokemonMove {
 pub struct StatChange {
     pub target_type: BattleTarget,
     pub name: PokemonStatName,
-    pub change: PokemonStatModifier
+    pub change: PokemonStatModifier,
+    pub accuracy: f64
 }
+
+// TODO: Move to NumberConstants module for qol
+const ONE_THIRD:f64 = 1.0/3.0;
 
 /// Effects incurred by a move
 // trait MoveSecondEffect {
@@ -102,11 +108,33 @@ impl PokemonMove {
                 let stat_change = StatChange {
                     target_type: BattleTarget::SELF,
                     name: PokemonStatName::SPECIAL_ATTACK, 
-                    change: PokemonStatModifier::MINUS_2
+                    change: PokemonStatModifier::MINUS_2,
+                    accuracy: 1.0
                 };
                 let v_stat = vec![stat_change];
                 vec![BattlePreAction::Stat(v_stat)]
             },
+            Iron_Head => {
+                return vec![
+                    BattlePreAction::Effect(
+                        vec![BattlePreEffect {
+                        target_type: OPPONENT,
+                        effect_type: BattleEffect::Flinch,
+                        accuracy: ONE_THIRD,
+                        damage_source: PokemonMoveName::Iron_Head.to_string()
+                    }
+                ])]
+            },
+            Rock_Slide => {
+                return vec![BattlePreAction::Effect(vec![
+                    BattlePreEffect {
+                        target_type: OPPONENT,
+                        effect_type: BattleEffect::Flinch,
+                        accuracy: ONE_THIRD,
+                        damage_source: PokemonMoveName::Rock_Slide.to_string()
+                    }
+                ])]
+            }
             // TODO: Make a generator that takes a list of default stuff and returns
             _ => return vec![] // no effect
         }
@@ -122,10 +150,43 @@ impl PokemonMove {
             _ => return true
         }
     }
+
+    /// Override the default accuracy check if necessary for this move
+    pub fn accuracy_check (&self,
+        battle_state:&BattleState) -> f64 {
+            // Perfect accuracy moves ignore accuracy check
+            if self.accuracy > 1.0 {
+                return 1.0;
+            }
+            match self.name {
+                // Put 1-HIT KO into here
+                // If minimize/submerged etc
+                _ => {
+                    return self.accuracy
+                }
+            }
+        }
+
+    fn get_flinch_chance( &self, target_type:BattleTarget, chance:f64) -> BattlePreEffect {
+        return BattlePreEffect {
+            effect_type: Flinch,
+            target_type: target_type,
+            accuracy: chance,
+            damage_source: "Flinched".to_string()
+        }
+    }
 }
 
 pub enum BattlePreAction {
-    Stat(Vec<StatChange>)
+    Stat(Vec<StatChange>),
+    Effect(Vec<BattlePreEffect>)
+}
+
+pub struct BattlePreEffect {
+    pub target_type: BattleTarget,
+    pub effect_type: BattleEffect,
+    pub accuracy: f64,
+    pub damage_source: String 
 }
 
 #[allow(dead_code, non_camel_case_types)]
@@ -138,7 +199,8 @@ pub enum PokemonMoveName {
     Crunch,
     Stone_Edge,
     Dragon_Claw,
-    Earthquake
+    Earthquake,
+    Rock_Slide
 
 }
 
@@ -155,6 +217,23 @@ pub fn get_move(pkmn_move:PokemonMoveName) -> PokemonMove {
             priority: 0,
             target_type: OPPONENT
         },
+        PokemonMoveName::Iron_Head => PokemonMove {
+            name: pkmn_move,
+            r#type: PokemonType::STEEL,
+            power: 80,
+            category: PokemonMoveCategory::Physical,
+            accuracy: 1.0,
+            pp: 24,
+            contact: true,
+            priority: 0,
+            target_type: OPPONENT
+        },
+        PokemonMoveName::Dragon_Claw => PokemonMove::new(
+            PokemonMoveName::Dragon_Claw, 
+            PokemonType::DRAGON, 
+            PokemonMoveCategory::Physical 
+        ).set_attr(80, 1.0, BattleTarget::ALL),
+        
         _ => panic!("Move has not been implemented!")
     }
 }

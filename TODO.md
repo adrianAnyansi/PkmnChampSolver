@@ -2,6 +2,12 @@
 
 Here's the TODO list
 
+Also I'm thinking of shelving this project since it's getting pretty big in scope- I don't quite know how it's possible it will be
+I've been thinking about the optimal plan for an actual battle- and that's also very difficult to understand
+
+I also didn't figure out how to do funciton pointers- I just need to link the enum to the pointer and it SUCKSSSSSSSSSSS
+
+
 ## Goal
 So the goal is this
 **Input**:
@@ -11,6 +17,24 @@ So the goal is this
     Probably sent to file
 
 I'm aiming to meet the smaller goal of sending 2 teams and getting all permutations
+
+## The multi-universe problem
+In order to explore all possible interactions, I need to explore all leads & moves & interactions from battle. This is a hard problem.
+My solution was that any func that creates outcomes (damage effect, etc) will entire contain a variable amount of damage or effects.
+### Actually doing this
+I don't want to implement this until the core engine is done, but I need the functions to be possible
+### Choosing
+Its kind of simple to choose a pokemon/move/swap/etc and create a universe for each.
+### Effects
+For effects, I need to return all effects/ranges to the queue and the battle engine needs to know each one. Lets give some examples
+- Move can status, miss, roll, kill, stat, etc.
+    Each effect should come with a % chance of occuring, but when there are multiple outcomes how
+    - Move can miss, return damage acc%. Includes the range of damage
+        - This wont work for multi-hit that fall-out 2nd effects... maybe. If I process dmg effects each, it could work
+    - 2nd effects need to be linked to hits, thats hard to know
+
+It might be better to go piece by piece cause I can't figure out the entire sequence of information required
+I should target the smaller issue of team vs team full path instead of the netire metagame search- so leave this for later
 
 ## General
 Here's the thing. I do want to get all ranges when it comes to doing calculations. Currently I just have performing 1 move, but performing the entire battle will require all the ranges & the branching- which I straight up don't want to do.

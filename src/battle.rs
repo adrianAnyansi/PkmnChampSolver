@@ -254,6 +254,17 @@ pub struct DamageEffect {
     pub damage_source: String 
 }
 
+pub struct AddEffect {
+    pub target: BattlePosition,
+    pub effect_type: BattleEffect,
+    pub damage_source: String
+}
+
+pub enum BattleEffect {
+    Flinch,
+    Trapped
+}
+
 pub enum DamageSource {
     Move(PokemonMove),
     Ability(PokemonAbility),
@@ -294,7 +305,7 @@ impl<'battle> BattleState<'battle> {
             f_poke2: None,
             b_poke1: None,
             b_poke2: None,
-            // Will implement this properly later in the future idk
+            // Will implement this properly later in the future idc rn
             weather: "None".to_string(),
             terrain: "None".to_string(),
             effects: "None".to_string(),
@@ -592,7 +603,7 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
-    /// TODO: How to handle targeting 1/N targeting??
+    /// TODO: Return tuple with number targets
     pub fn convert_target_to_position (target:BattleTarget, 
         source: BattlePosition) -> Vec<BattlePosition> {
             use BattlePosition::*;
@@ -609,6 +620,7 @@ impl<'battle> BattleState<'battle> {
             BattleTarget::ANY => vec![F1, F2, B1, B2],
             BattleTarget::OPPONENT => vec![source.get_opposing()],
             BattleTarget::OPPONENT_ALL => source.get_opposing_team(),
+            BattleTarget::ALL_SELF => vec![F1, F2, B1, B2],
         }
     }
 }

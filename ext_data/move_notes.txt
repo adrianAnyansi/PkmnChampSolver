@@ -1,0 +1,16 @@
+Draco_Meteor = self -2 sp_atk
+Kowtow_Cleave - cannot miss
+Iron_Head - 30% flinch chance
+Night_Slash - +1 crit ratio
+Crunch - 20% -1 def
+Stone_Edge - 90% acc, crit ratio
+    Dragon_Claw - raw
+    Earthquake - Hits all except self
+
+Rock Slide - hits both, flinch chance
+Protect - protect status
+Stomping Tantrum - ground
+Poison Jab - 30% poison chance
+Rock Tomb - rock, traps user
+Swords Dance - +2 atk
+Scale Shot - speed, 40 base
