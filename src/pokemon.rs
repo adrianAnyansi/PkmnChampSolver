@@ -24,7 +24,7 @@ pub enum PokemonName {
 
 
 #[allow(non_camel_case_types)]
-#[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Deserialize, EnumString, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PokemonAbility {
     Sand_Force,
     Rough_Skin,
@@ -76,14 +76,47 @@ impl<'de> Deserialize<'de> for Pokemon {
             name: Option<String>,
             base_stats: PokemonStats,
             trained_stats: Option<PokemonStats>,
-            abilities: Vec<PokemonAbility>,
             #[serde(default)]
-            learnset: Option<Vec<PokemonMoveName>>,
+            abilities: Vec<String>,
+            #[serde(default)]
+            learnset: Option<Vec<String>>,
             weight: f64,
             types: Vec<PokemonType>,
         }
 
         let data = PokemonData::deserialize(deserializer)?;
+        let pokemon_label = data
+            .name
+            .as_deref()
+            .unwrap_or("<unknown>");
+        let abilities = data.abilities.into_iter()
+            .filter_map(|ability| {
+                match PokemonAbility::from_str(&ability) {
+                    Ok(parsed_ability) => Some(parsed_ability),
+                    Err(_) => {
+                        eprintln!(
+                            "Warning: Ignoring unknown ability '{}' for pokemon '{}'",
+                            ability, pokemon_label
+                        );
+                        None
+                    }
+                }
+            })
+            .collect();
+        let learnset = data.learnset.unwrap_or_default().into_iter()
+            .filter_map(|move_name| {
+                match PokemonMoveName::from_str(&move_name) {
+                    Ok(parsed_move) => Some(parsed_move),
+                    Err(_) => {
+                        eprintln!(
+                            "Warning: Ignoring unknown move '{}' for pokemon '{}'",
+                            move_name, pokemon_label
+                        );
+                        None
+                    }
+                }
+            })
+            .collect();
         let mut types = data.types;
         
         // Pad with TYPELESS if only one type
@@ -98,8 +131,8 @@ impl<'de> Deserialize<'de> for Pokemon {
             name: PokemonName::Garchomp, // This will be overwritten by get_stat_json
             base_stats: data.base_stats,
             // trained_stats: data.trained_stats,
-            abilities: data.abilities,
-            learnset: data.learnset.unwrap_or_default(),
+            abilities,
+            learnset,
             weight: data.weight,
             types,
         })
@@ -155,7 +188,7 @@ pub fn get_stat_json() -> HashMap<PokemonName, Pokemon> {
                     }
                 }
                 Err(_) => {
-                    eprintln!("Warning: Unknown pokemon '{}' in JSON file", k);
+                    eprintln!("Warning: Ignoring unknown pokemon '{}' in JSON file", k);
                     None
                 }
             }

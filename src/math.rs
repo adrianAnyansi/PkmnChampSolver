@@ -33,38 +33,47 @@ impl PkmnRational {
     pub fn float(self) -> f64 {
         return self.numer as f64 / self.demon as f64
     }
+
+    pub fn new(numer:i32, demon:u32) -> PkmnRational{
+        return PkmnRational{
+            numer: numer,
+            demon: demon
+        }
+    }
     
     // Find GCD and reduce numer/demon if needed
-    fn reduce(mut self) {
+    fn reduce(&mut self) {
         if self.demon > PkmnRational::REDUCE_MIN {
             // GCD algo
             let mut large: u32 = self.demon.max(self.numer.abs() as u32);
-            let small:u32;
+            let mut small:u32;
             if self.demon == large {
                 small = self.numer as u32;
             } else {
                 small = self.demon;
             }
 
-            let mut remain = 1;
-            while remain != 0 {
-                large = large % small;
-                if large == 0 {
+            // let mut remain = 1;
+            while small != 0 {
+                let remain = large % small;
+                if remain == 0 {
                     break
                 }
-                remain = large
+                // remain = large;
+                large = small;
+                small = remain;
             }
 
             // once GCD is found, divide
-            self.numer /= remain as i32;
-            self.demon /= remain;
+            self.numer /= small as i32;
+            self.demon /= small;
         }
     }
 }
 
 impl core::fmt::Display for PkmnRational {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let pct = format!("{:04.1}", 
+        let pct = format!("{:04.2}", 
             (self.numer as f32)/ (self.demon as f32));
         write!(f, "{}/{} [{pct}%]", self.numer, self.demon)
     }
@@ -117,6 +126,69 @@ pub fn get_random_int(low:u32, high:u32) -> u32 {
 mod tests {
 
     use super::*;
+
+    
+    const EPS:f64 = 1e-9;
+    fn float_compare(a:f64, b:f64) -> bool {
+        return (a-b) < EPS
+    }
+
+    #[test]
+    fn test_ratio_value() {
+        let rat = PkmnRational{numer:5, demon:10};
+
+        assert!(float_compare(rat.float(), 5.0/10.0));
+        assert!(float_compare(
+            PkmnRational::new(4,2).float(),
+            4.0/2.0)
+        );
+    }
+
+    #[test]
+    fn test_ratio_math() {
+        assert!(
+            float_compare(
+                (PkmnRational::new(10, 20) 
+                + PkmnRational::new(5, 20)).float(),
+                 15.0/20.0)
+        );
+        assert!(
+            float_compare(
+                (PkmnRational::new(10, 20) 
+                - PkmnRational::new(5, 20)).float(),
+                 5.0/20.0)
+        );
+        assert!(
+            float_compare(
+                (PkmnRational::new(1, 3) 
+                + PkmnRational::new(3, 4)).float(),
+                 13.0/12.0)
+        );
+        assert!(
+            float_compare(
+                (PkmnRational::new(2, 3) 
+                - PkmnRational::new(1, 4)).float(),
+                 11.0/12.0)
+        );
+        // TODO: Add assign test
+    }
+
+    #[test]
+    fn test_ratio_reduction() {
+        let rat = PkmnRational::new(240, 1080);
+        let rat2 = PkmnRational::new(8, 80);
+
+        let mut rat_sum = rat + rat2;
+        assert_eq!(rat_sum.numer, 240*80 + 8 * 1080);
+        assert_eq!(rat_sum.demon, 1080 * 80);
+
+        
+        // force reduction (note this will happen automatically in the future*)
+        rat_sum.reduce();
+        println!("{}", rat_sum);
+        assert_eq!(rat_sum.numer, 29);
+        assert_eq!(rat_sum.demon, 90);
+    }
 
     #[test]
     fn get_random_int_in_range() {

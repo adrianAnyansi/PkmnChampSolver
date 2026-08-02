@@ -12,10 +12,10 @@ Fainting and win-conditions
 moves are gonna be in code- too hard to implmenet move/item scripting logic
 
 ## Today
-I need to pull logic out of BattleState so that functions can return clones of BattleState when performed
-I also need Battle state to contain a reserve team of N pokemon
+Built some of the processor but it's too abstract for me to do while worrying about too many things
 
-Let me build the battle container and processor outside these games
+I'm going to implement some moves instead now
+
 
 # Teams to implement
 ## ARSAL PURI

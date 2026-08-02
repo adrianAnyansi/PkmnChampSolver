@@ -223,7 +223,7 @@ struct BattlePositionVec {
 pub struct MoveAction<'battle> {
     pub source: BattlePosition,
     pub targets: Vec<BattlePosition>,
-    pub pkm_move: &'battle PokemonMove,
+    pub pkm_move: &'battle PokemonMove<'battle>,
 }
 
 /// Stat Modifier Change being performed
@@ -267,12 +267,13 @@ pub enum BattleEffect {
     Trapped
 }
 
-pub enum DamageSource {
-    Move(PokemonMove),
+pub enum DamageSource<'battle> {
+    Move(PokemonMove<'battle>),
     Ability(PokemonAbility),
     Status(PokemonStatus)
 }
 
+#[allow(non_camel_case_types)]
 pub enum MoveResultEnum {
     DAMAGE,
     FAINTED,
@@ -613,7 +614,7 @@ impl<'battle> BattleState<'battle> {
             use BattlePosition::*;
         match target {
             BattleTarget::SELF => vec![source],
-            BattleTarget::ALL => {
+            BattleTarget::ALL_EXCEPT_SELF => {
                 let mut vec = source.get_opposing_team();
                 vec.push(source.get_ally());
                 vec

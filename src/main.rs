@@ -4,7 +4,6 @@ use crate::pokemon::types::{PokemonType, get_type_multipler};
 mod battle;
 mod pokemon;
 mod math;
-// use crate::pokemon::poke_stat::PokemonStats;
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::PokemonMoveName;
 

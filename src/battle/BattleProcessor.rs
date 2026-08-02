@@ -12,12 +12,17 @@ pub struct BattleContainer<'battle> {
     pub pct_chance: PkmnRational
 }
 
-pub struct BattleProcessor {}
+pub struct BattleProcessor<'battle> {
 
-impl BattleProcessor {
+    pub battle_state_vec:Vec<BattleContainer<'battle>>,
+    pub iter:u64,
+
+}
+
+impl<'battle> BattleProcessor<'battle> {
 
     // Collapse container by making a random value and choosing a state to return
-    fn collapse<'battle>(bc:BattleContainer<'battle>, 
+    fn collapse(bc:BattleContainer<'battle>, 
         seed:Option<PkmnRational>) -> BattleContainer<'battle> {
         
         if bc.battleCtns.len() == 0 {
@@ -28,9 +33,9 @@ impl BattleProcessor {
         if seed.is_some() {
             rand_rat = seed.unwrap();
         } else {
-            rand_rat = PkmnRational{
-                numer: get_random_int(1, 10_000) as i32,
-                demon: 10_000};
+            rand_rat = PkmnRational::new(
+                get_random_int(1, 10_000) as i32,
+                 10_000);
         }
         
         // NOTE: If higher resolution, throw an error

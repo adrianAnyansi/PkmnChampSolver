@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{self, AddEffect, BattleAction, BattleEffect::{self, Flinch}, BattleState, MoveAction}, pokemon::{moves::{BattleTarget::OPPONENT, PokemonMoveName::{Draco_Meteor, Kowtow_Cleave}}, poke_stat::{PokemonStatModifier, PokemonStatName}}};
+use crate::{battle::{self, AddEffect, BattleAction, BattleEffect::{self, Flinch}, BattleState, MoveAction}, pokemon::{moves::{BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Close_Combat, Dazzling_Gleam, Dire_Claw, Draco_Meteor, Heavy_Slam, High_Horsepower, Hydro_Pump, Knock_Off, Kowtow_Cleave, Light_Screen, Matcha_Gotcha, Rage_Powder, Swords_Dance, Thunderbolt, Trick_Room, Wide_Guard, Will_O_Wisp}}, poke_stat::{PokemonStatModifier, PokemonStatName}}};
 use crate::pokemon::types::PokemonType;
 
 /// Move type and additional information
@@ -32,13 +32,13 @@ pub enum BattleTarget {
     /// Target anyone on the field
     ANY,
     /// Target all users except self
-    ALL,
+    ALL_EXCEPT_SELF,
     /// Target all users including self
     ALL_SELF
 }
 
 #[allow(dead_code)]
-pub struct PokemonMove {
+pub struct PokemonMove<'simulation> {
     pub name: PokemonMoveName,
     pub power: i32,
     pub r#type: PokemonType,
@@ -48,7 +48,8 @@ pub struct PokemonMove {
     pp: i32,
     pub priority: i8,
     contact: bool,
-    pub target_type: BattleTarget
+    pub target_type: BattleTarget,
+    pub hit_actions: Vec<BattleAction<'simulation>>,
 }
 
 /// Indicates a change in stat boosts
@@ -72,7 +73,7 @@ const ONE_THIRD:f64 = 1.0/3.0;
 //     fn beforeAction (battle_state:&BattleState) -> bool;
 // }
 
-impl PokemonMove {
+impl<'battle> PokemonMove<'battle> {
     pub fn new (move_name:PokemonMoveName, 
         move_type:PokemonType, 
         catg:PokemonMoveCategory) -> Self {
@@ -85,7 +86,26 @@ impl PokemonMove {
             pp: 32,
             contact: false,
             priority: 0,
-            target_type: OPPONENT
+            target_type: ANY,
+            hit_actions: vec![]
+        }
+    }
+
+    pub fn status (move_name:PokemonMoveName,
+        move_type:PokemonType,
+        target: BattleTarget
+    ) -> Self {
+        PokemonMove {
+            name: move_name,
+            r#type: move_type,
+            category: PokemonMoveCategory::Status,
+            power: 0,
+            accuracy: 1.0,
+            pp: 32,
+            contact: false,
+            priority: 0,
+            target_type: target,
+            hit_actions: vec![]
         }
     }
 
@@ -94,6 +114,16 @@ impl PokemonMove {
     ) -> Self {
         self.power = power;
         self.accuracy = acc;
+        self.target_type = target;
+        self
+    }
+
+    pub fn set_power(mut self, power:i32) -> Self {
+        self.power = power;
+        self
+    }
+
+    pub fn set_target(mut self, target: BattleTarget) -> Self {
         self.target_type = target;
         self
     }
@@ -190,7 +220,7 @@ pub struct BattlePreEffect {
 }
 
 #[allow(dead_code, non_camel_case_types)]
-#[derive(Display, Debug, Deserialize)]
+#[derive(Display, EnumString, Debug, Deserialize, Copy, Clone)]
 pub enum PokemonMoveName {
     Draco_Meteor,
     Kowtow_Cleave,
@@ -200,39 +230,179 @@ pub enum PokemonMoveName {
     Stone_Edge,
     Dragon_Claw,
     Earthquake,
-    Rock_Slide
+    Rock_Slide,
+
+    Sleep_Powder,
+    Sludge_Bomb,
+    Earth_Power,
+    Protect,
+
+    Heat_Wave,
+    Solar_Beam,
+    Weather_Ball,
+
+    Stomping_Tantrum,
+    
+    Fake_Out,
+    Flare_Blitz,
+    Parting_Shot,
+    Throat_Chop,
+
+    Moonblast,
+    Dazzling_Gleam,
+    Calm_Mind,
+
+    Matcha_Gotcha,
+    Rage_Powder,
+    Trick_Room,
+
+    Close_Combat,
+    Dire_Claw,
+
+    Brave_Bird,
+    Swords_Dance,
+
+    Heavy_Slam,
+    High_Horsepower,
+    Wide_Guard,
+
+    Will_O_Wisp,
+    Thunderbolt,
+    Hydro_Pump,
+    Light_Screen,
+
+    Knock_Off,
+    Dragon_Dance
 
 }
 
-pub fn get_move(pkmn_move:PokemonMoveName) -> PokemonMove {
-    match pkmn_move {
-        PokemonMoveName::Draco_Meteor => PokemonMove {
-            name: pkmn_move,
-            r#type: PokemonType::DRAGON,
-            power: 130,
-            category: PokemonMoveCategory::Special,
-            accuracy: 0.9,
-            pp: 12,
-            contact: false,
-            priority: 0,
-            target_type: OPPONENT
-        },
-        PokemonMoveName::Iron_Head => PokemonMove {
-            name: pkmn_move,
-            r#type: PokemonType::STEEL,
-            power: 80,
-            category: PokemonMoveCategory::Physical,
-            accuracy: 1.0,
-            pp: 24,
-            contact: true,
-            priority: 0,
-            target_type: OPPONENT
-        },
+pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove<'simulation> {
+
+    use PokemonMoveCategory::*;
+    use PokemonType::*;
+    use BattleTarget::*;
+    use PokemonMoveName::*;
+
+    match pkmn_move_name {
+        PokemonMoveName::Draco_Meteor => PokemonMove::new(
+            pkmn_move_name, DRAGON, Special
+        ).set_attr(130, 0.9, OPPONENT),
+        PokemonMoveName::Iron_Head => PokemonMove::new(
+            pkmn_move_name, STEEL, Physical
+        ).set_power(80),
         PokemonMoveName::Dragon_Claw => PokemonMove::new(
             PokemonMoveName::Dragon_Claw, 
             PokemonType::DRAGON, 
             PokemonMoveCategory::Physical 
-        ).set_attr(80, 1.0, BattleTarget::ALL),
+        ).set_attr(80, 1.0, BattleTarget::OPPONENT),
+        PokemonMoveName::Sludge_Bomb => PokemonMove::new(
+            PokemonMoveName::Sludge_Bomb,
+            PokemonType::POISON,
+            PokemonMoveCategory::Special,
+        ).set_attr(80, 1.0, OPPONENT),
+        PokemonMoveName::Earth_Power => PokemonMove::new(
+            PokemonMoveName::Earth_Power,
+            PokemonType::GROUND,
+            Special
+        ).set_attr(80, 1.0, OPPONENT),
+        PokemonMoveName::Sleep_Powder => PokemonMove::status(
+            pkmn_move_name, GRASS, ANY
+        ).set_attr(0, 0.75, ANY)
+        // TODO: Set additional effect on hit
+        ,
+        PokemonMoveName::Heat_Wave => PokemonMove::new(
+            pkmn_move_name, FIRE, Special
+        ).set_attr(85, 0.85, OPPONENT_ALL)
+        // TODO: Burn effect
+        ,
+        // Add charging effect pre
+        PokemonMoveName::Solar_Beam => PokemonMove::new(
+            pkmn_move_name, GRASS, Special
+        ).set_attr(120, 1.0, OPPONENT), 
+        PokemonMoveName::Weather_Ball => PokemonMove::new(
+            pkmn_move_name, NORMAL, Special
+        ).set_attr(60, 1.0, OPPONENT),
+        // TODO: Add protecting status state
+        PokemonMoveName::Protect => PokemonMove::status(
+            pkmn_move_name, NORMAL, SELF
+        ).set_attr(0, 1.0, SELF),
+        PokemonMoveName::Earthquake => PokemonMove::new(
+            pkmn_move_name, GROUND, Physical
+        ).set_attr(100, 1.0, ALL_EXCEPT_SELF),
+        // TODO: Flinch chance
+        PokemonMoveName::Rock_Slide => PokemonMove::new(
+            pkmn_move_name, ROCK, Physical
+        ).set_attr(90, 0.85, OPPONENT_ALL),
+        // TODO: failed last turn
+        PokemonMoveName::Stomping_Tantrum => PokemonMove::new(
+            pkmn_move_name, GROUND, Physical
+        ).set_attr(75, 1.0, OPPONENT),
+        PokemonMoveName::Fake_Out => PokemonMove::new(
+            pkmn_move_name, NORMAL, Physical
+        ).set_attr(40, 1.0, OPPONENT),
+        // 
+        PokemonMoveName::Flare_Blitz => PokemonMove::new(
+            pkmn_move_name, FIRE, Physical
+        ).set_attr(120, 1.0, OPPONENT),
+        PokemonMoveName::Parting_Shot => PokemonMove::status(
+            pkmn_move_name, DARK, OPPONENT),
+        PokemonMoveName::Throat_Chop => PokemonMove::new(
+            pkmn_move_name, DARK, Physical
+        ).set_power(80),
+        PokemonMoveName::Moonblast => PokemonMove::new(
+            pkmn_move_name, FAIRY, Special
+        ).set_power(95),
+        Dazzling_Gleam => PokemonMove::new(
+            pkmn_move_name, FAIRY, Special
+        ).set_power(80).set_target(OPPONENT_ALL),
+        Calm_Mind => PokemonMove::status(
+            pkmn_move_name, NORMAL, SELF
+        ),
+        Matcha_Gotcha => PokemonMove::new(
+            pkmn_move_name, GRASS, Special
+        ).set_power(80).set_target(OPPONENT_ALL),
+        Rage_Powder => PokemonMove::status(
+            pkmn_move_name, BUG, SELF
+        ),
+        Trick_Room => PokemonMove::status(
+            pkmn_move_name, PSYCHIC, SELF),
+        // reduce stats on hit
+        Close_Combat => PokemonMove::new(
+            pkmn_move_name,  FIGHTING, Physical
+        ).set_power(120),
+        Dire_Claw => PokemonMove::new(
+            pkmn_move_name, POISON, Physical
+        ).set_power(80),
+        // Stat increase
+        Swords_Dance => PokemonMove::status(
+            pkmn_move_name, NORMAL, SELF),
+        // Custom power
+        Heavy_Slam => PokemonMove::new(
+            pkmn_move_name, STEEL, Physical
+        ).set_power(0),
+        High_Horsepower => PokemonMove::new(
+            pkmn_move_name, GROUND, Physical
+        ).set_power(95),
+        Wide_Guard => PokemonMove::status(
+            pkmn_move_name, ROCK, ALLY_ALL),
+        // Burn target
+        Will_O_Wisp => PokemonMove::status(
+            pkmn_move_name, FIRE, OPPONENT
+        ),
+        // Paralyze target
+        Thunderbolt => PokemonMove::new(
+            pkmn_move_name, ELECTRIC, Special
+        ).set_power(90),
+        Hydro_Pump => PokemonMove::new(
+            pkmn_move_name, WATER, Special
+        ).set_power(120).set_attr(120, 0.85, OPPONENT),
+        Light_Screen => PokemonMove::status(
+            pkmn_move_name, PSYCHIC, ALLY_ALL
+        ),
+        // Knock off logic
+        Knock_Off => PokemonMove::new(
+            pkmn_move_name, DARK, Physical
+        ).set_power(60),
         
         _ => panic!("Move has not been implemented!")
     }
