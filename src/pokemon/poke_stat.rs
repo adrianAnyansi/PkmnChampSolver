@@ -91,21 +91,6 @@ impl std::ops::Add for PokemonStats {
     }
 }
 
-// impl std::ops::Add for &PokemonStats {
-//     type Output = &Self;
-
-//     fn add(&self, rhs: &Self) -> Self::Output {
-//         &PokemonStats {
-//             hp: *self.hp + *rhs.hp,
-//             attack: *self.attack + *rhs.attack,
-//             defense: *self.defense + *rhs.defense,
-//             sp_attack: *self.sp_attack + *rhs.sp_attack,
-//             sp_defense: *self.sp_defense + *rhs.sp_defense,
-//             speed: *self.speed + *rhs.speed
-//         }
-//     }
-// }
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PokemonStatName {
     HEALTH,

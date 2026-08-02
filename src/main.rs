@@ -8,6 +8,7 @@ mod math;
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::PokemonMoveName;
 
+
 fn main() {
     println!("Pokemon Solver starting up!");
 

@@ -3,6 +3,8 @@
 
 use std::{collections::VecDeque, fmt::write};
 
+pub mod BattleProcessor;
+
 use crate::{math::{div_and_floor, mult_and_round}, pokemon::{Pokemon, PokemonAbility, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat}};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
@@ -286,13 +288,15 @@ pub struct BattleState<'battle> {
     pub b_poke1: Option<ActivePokemon>,
     pub b_poke2: Option<ActivePokemon>,
     pub weather: String,
+    // active terrain (only 1) on the field
     pub terrain: String,
     pub effects: String,
     pub room: String,
     /// This will contain the many per battle effects that don't fit neatly
     /// i.e Rage Fist, Disguise, etc.
     pub internal_state: String,
-    pub current_action: Option<String>,
+    // pub current_action: Option<String>,
+    // NOTE: If speed/ability/etc order is hard to order, create a different queue
     pub action_queue: VecDeque<BattleAction<'battle>>,
     pub turn_num: i32,
 }
@@ -311,7 +315,7 @@ impl<'battle> BattleState<'battle> {
             effects: "None".to_string(),
             room: "None".to_string(),
             internal_state: "_".to_string(),
-            current_action: None,
+            // current_action: None,
             action_queue: VecDeque::new(),
             turn_num: 0,
         }
