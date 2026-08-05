@@ -18,6 +18,7 @@ pub struct PkmnRational {
     pub demon: u32,
 }
 
+#[allow(non_snake_case)]
 impl PkmnRational {
 
     const REDUCE_MIN:u32 = 10_000;
@@ -40,10 +41,32 @@ impl PkmnRational {
             demon: demon
         }
     }
+
+    // Return fraction out of 100
+    pub fn pct(numer:i32) -> PkmnRational {
+        return PkmnRational { numer, demon: 100 }
+    }
+
+    /// Hacky convert to fraction
+    pub fn from_float(float: f64) -> PkmnRational {
+        let precision: u32 = 1_000_000;
+        let numer = (float * precision as f64).round() as i32;
+        let mut r = PkmnRational { numer, demon: precision };
+        r.reduce();
+        r
+    }
+
+    pub fn pow(self, exp: u32) -> PkmnRational {
+        let mut out = PkmnRational::ONE();
+        for _ in 0..exp {
+            out = out * self;
+        }
+        out
+    }
     
     // Find GCD and reduce numer/demon if needed
     fn reduce(&mut self) {
-        if self.demon > PkmnRational::REDUCE_MIN {
+        // if self.demon > PkmnRational::REDUCE_MIN {
             // GCD algo
             let mut large: u32 = self.demon.max(self.numer.abs() as u32);
             let mut small:u32;
@@ -67,8 +90,9 @@ impl PkmnRational {
             // once GCD is found, divide
             self.numer /= small as i32;
             self.demon /= small;
-        }
+        // }
     }
+
 }
 
 impl core::fmt::Display for PkmnRational {
@@ -94,7 +118,19 @@ impl std::ops::AddAssign for PkmnRational {
 
     fn add_assign(&mut self, rhs: Self) {
         self.numer = rhs.numer * self.demon as i32 + self.numer * rhs.demon as i32;
-        self.demon *= rhs.demon
+        self.demon *= rhs.demon;
+        if self.demon > PkmnRational::REDUCE_MIN {
+            self.reduce();
+        }
+    }
+}
+
+impl PartialEq for PkmnRational {
+    fn eq(&self, other: &Self) -> bool {
+        if self.demon == other.demon {
+            return self.numer == other.numer;
+        }
+        self.numer * other.demon as i32 == other.numer * self.demon as i32
     }
 }
 
@@ -108,6 +144,32 @@ impl std::ops::Sub for PkmnRational {
         };
     }
 }
+
+impl std::ops::Mul<i32> for PkmnRational {
+    type Output = Self;
+
+    fn mul(self, rhs: i32) -> Self {
+        Self { numer: self.numer * rhs, demon: self.demon }
+    }
+}
+
+impl std::ops::Mul<PkmnRational> for PkmnRational {
+    type Output = Self;
+
+    fn mul(self, rhs: PkmnRational) -> Self {
+        Self { numer: self.numer * rhs.numer, demon: self.demon * rhs.demon }
+    }
+}
+
+impl std::ops::BitXor<u32> for PkmnRational {
+    type Output = Self;
+
+    fn bitxor(self, rhs: u32) -> Self {
+        self.pow(rhs)
+    }
+}
+
+
 
 // TODO: Use this rng thread 
 pub fn getRNGThread() -> ThreadRng {
@@ -197,5 +259,45 @@ mod tests {
             let rng = get_random_int(range.start, range.end);
             assert!(rng >= range.start && rng < range.end);
         }
+    }
+
+    #[test]
+    fn test_rational_equality() {
+        // same denominator
+        assert!(PkmnRational { numer: 3, demon: 10 } == PkmnRational { numer: 3, demon: 10 });
+        assert!(PkmnRational { numer: 2, demon: 10 } != PkmnRational { numer: 3, demon: 10 });
+
+        // different denominator, equivalent value (1/2 == 2/4)
+        assert!(PkmnRational { numer: 1, demon: 2 } == PkmnRational { numer: 2, demon: 4 });
+        assert!(PkmnRational { numer: 1, demon: 3 } != PkmnRational { numer: 1, demon: 2 });
+    }
+
+    #[test]
+    fn test_rational_multiply() {
+        // scalar: 1/4 * 3 == 3/4
+        let r = PkmnRational { numer: 1, demon: 4 } * 3;
+        assert_eq!(r.numer, 3);
+        assert_eq!(r.demon, 4);
+
+        // rational * rational: 1/2 * 3/4 == 3/8
+        let a = PkmnRational { numer: 1, demon: 2 };
+        let b = PkmnRational { numer: 3, demon: 4 };
+        let product = a * b;
+        assert_eq!(product.numer, 3);
+        assert_eq!(product.demon, 8);
+    }
+
+    #[test]
+    fn test_rational_pow() {
+        let r = PkmnRational::new(2, 3);
+
+        // exponent 0 should return multiplicative identity.
+        assert_eq!(r.pow(0), PkmnRational::ONE());
+
+        // (2/3)^3 = 8/27
+        assert_eq!(r.pow(3), PkmnRational::new(8, 27));
+
+        // operator form delegates to the same multiplication-based power logic.
+        assert_eq!(r ^ 3, PkmnRational::new(8, 27));
     }
 }

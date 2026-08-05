@@ -1,21 +1,37 @@
 # TODO
 
 Reducing this file so it's just current tasks
+Goal is to keep the task small and 
 
 I'm going to pick 2 teams from the last pokemon champions tourney
 Then simulate the whole match (without universes)
 
-Starting with implementing every pokemon & move
-then abilities and items
-Fainting and win-conditions
-
-moves are gonna be in code- too hard to implmenet move/item scripting logic
+Moves/Pokes are implemented
+Next is the Container/processor
+Then verify the damage calculation
+Then speed / priority calculations
+Then implementing teams and draft selection stuff?
 
 ## Today
-Built some of the processor but it's too abstract for me to do while worrying about too many things
 
-I'm going to implement some moves instead now
+Going to implement the container and have it continue to pick random attacks
 
+Adding the condition that match ends when all pokemon on one side are dead
+
+Then going to validate the damage calc with stats and then natures
+
+# Battle State
+Thinking through battle state mutating itself vs processing on the state
+No just do the safe thing, multiple return and optimize after
+
+I should go action by action-
+the turn thing is sort of a simulation thing
+
+
+ok to copy/clone the state, gotta fix the ActivePokemon thing
+basically need a TrainedPokemon intermediate so I can cache the pokemon stats-
+or do I?
+Trained stats are the only thing that remains independent between states, and since I might shift them for 
 
 # Teams to implement
 ## ARSAL PURI

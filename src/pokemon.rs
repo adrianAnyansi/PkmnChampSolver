@@ -19,7 +19,8 @@ use std::sync::LazyLock as Lazy;
 pub enum PokemonName {
     Garchomp,
     Kingambit,
-    Tyranitar
+    Tyranitar,
+    Venusaur,
 }
 
 
@@ -32,13 +33,15 @@ pub enum PokemonAbility {
     Sand_Stream,
     Unnerve,
     Supreme_Overlord,
-    Sand_Veil
+    Sand_Veil,
+    Nothing
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PokemonItem {
     Garchompinite,
-    SoftSand
+    SoftSand,
+    Nothing
 }
 
 
@@ -89,6 +92,22 @@ impl<'de> Deserialize<'de> for Pokemon {
             .name
             .as_deref()
             .unwrap_or("<unknown>");
+
+        let pokemon_name =             
+                match PokemonName::from_str(pokemon_label) {
+                    Ok(parsed_name) => Some(parsed_name),
+                    Err(_) => {
+                        eprintln!(
+                            "Warn: Ignoring unparsed pokemon name {}",
+                            pokemon_label
+                        );
+                        // Exit if invalid pokemon name
+                        return Err(serde::de::Error::custom(
+                            format!("Invalid Pokemon Name {}", pokemon_label)
+                        ));
+                    }
+                };
+
         let abilities = data.abilities.into_iter()
             .filter_map(|ability| {
                 match PokemonAbility::from_str(&ability) {
@@ -128,7 +147,8 @@ impl<'de> Deserialize<'de> for Pokemon {
         types.truncate(2);
 
         Ok(Pokemon {
-            name: PokemonName::Garchomp, // This will be overwritten by get_stat_json
+            // name: PokemonName::Garchomp, // This will be overwritten by get_stat_json
+            name: pokemon_name.unwrap(),
             base_stats: data.base_stats,
             // trained_stats: data.trained_stats,
             abilities,
@@ -169,6 +189,8 @@ pub fn get_stat_json() -> HashMap<PokemonName, Pokemon> {
     let raw_map: HashMap<String, serde_json::Value> = serde_json::from_str(POKE_JSON_STR)
         .expect("Failed to parse pokemon json file");
     
+    // TODO: When given data, only deserialize the pokemon used
+
     // Then manually deserialize each entry and filter out those with unknown pokemon names
     let poke_map: HashMap<PokemonName, Pokemon> = raw_map.into_iter()
         .filter_map(|(k, v)| {

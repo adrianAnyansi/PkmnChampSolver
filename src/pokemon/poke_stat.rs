@@ -212,6 +212,20 @@ impl PokemonStatModifier {
         // TODO: This is not a safe index technically from the compiler viewpoint
         PokemonStatModifier::ORDERED[clamped_val]
     }
+
+    /// Return the direction of the boost as -1,0,1
+    pub fn direction (&self) -> i8 {
+        match self {
+            PokemonStatModifier::ZERO => 0,
+            PokemonStatModifier::MINUS_1| 
+            PokemonStatModifier::MINUS_2|
+            PokemonStatModifier::MINUS_3|
+            PokemonStatModifier::MINUS_4|
+            PokemonStatModifier::MINUS_5|
+            PokemonStatModifier::MINUS_6 => -1,
+            _ => 1
+        }
+    }
 }
 
 

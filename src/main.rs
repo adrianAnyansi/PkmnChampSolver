@@ -1,4 +1,6 @@
+use crate::battle::BattleProcessor::{BattleContainer, BattleProcessor};
 use crate::battle::{ActivePokemon, BattlePosition, BattleState};
+use crate::math::PkmnRational;
 use crate::pokemon::types::{PokemonType, get_type_multipler};
 
 mod battle;
@@ -7,6 +9,7 @@ mod math;
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::PokemonMoveName;
 
+// #[allow(unused)]
 
 fn main() {
     println!("Pokemon Solver starting up!");
@@ -14,6 +17,8 @@ fn main() {
     // analyze();
     garchomp_fight_test();
     // make_pokemon_from_file();
+
+    
     println!("Pokemon Solver complete!");
 }
 
@@ -80,4 +85,36 @@ fn garchomp_fight_test() {
     // print state again
     println!("Printing the current battle state:");
     println!("{}", bs.get_print_state());
+}
+
+
+fn battle_container_test() {
+
+    println!("Battle processor startup");
+    let mut battle_processor = BattleProcessor::new();
+
+    let mut bs = BattleState::new();
+    let venusaur = pokemon::get_pkmn(PokemonName::Venusaur);
+    let garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
+
+    bs.f_poke1 = Some(
+        ActivePokemon::new(venusaur, 
+            pokemon::PokemonAbility::Nothing, 
+            pokemon::poke_stat::PokemonNature::Brave, None)
+    );
+    bs.b_poke1 = Some(ActivePokemon::new(garchomp, 
+        pokemon::PokemonAbility::Nothing, 
+        pokemon::poke_stat::PokemonNature::Brave, 
+        None));
+
+    println!("Created {} {} pokemon", venusaur, garchomp);
+
+    let bc = BattleContainer {
+        battle_ctns: vec![],
+        battle_state: Some(bs),
+        pct_chance: PkmnRational::ONE()
+    };
+    battle_processor.battle_state_vec.push(bc);
+
+    // get the container
 }

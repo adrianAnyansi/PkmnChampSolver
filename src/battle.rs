@@ -5,11 +5,12 @@ use std::{collections::VecDeque, fmt::write};
 
 pub mod BattleProcessor;
 
-use crate::{math::{div_and_floor, mult_and_round}, pokemon::{Pokemon, PokemonAbility, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat}};
+use crate::{battle::BattleProcessor::BattleContainer, math::{PkmnRational, div_and_floor, mult_and_round}, pokemon::{Pokemon, PokemonAbility, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat}};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
 
 #[allow(dead_code)]
+#[derive(Debug, Copy, Clone)]
 pub enum PokemonStatus {
     NONE,
     BURNED,
@@ -17,11 +18,13 @@ pub enum PokemonStatus {
     FROZEN,
     SLEEP,
     POISONED,
+    TOXIC
 }
 
 static LEVEL: i32 = 50;
 fn pkmn_damage_formula(power:i32,
-    atk_stat:i32, def_stat:i32) -> i32 {
+    atk_stat:i32, 
+    def_stat:i32) -> i32 {
 
     let level_dmg = (2 * LEVEL) / 5 + 2;
     let power_dmg = level_dmg * power * atk_stat;
@@ -34,6 +37,7 @@ fn pkmn_damage_formula(power:i32,
 
 /// Represents an active pokemon slot including current hp, status and boosts
 // #[allow(Display)]
+#[derive(Clone)]
 pub struct ActivePokemon {
     pub pokemon: &'static Pokemon,
     pub trained_stats: PokemonStats,
@@ -97,6 +101,17 @@ impl ActivePokemon {
             }
         }
     }
+    pub fn get_active_stat_modf(&self, stat_type:PokemonStatName) -> &PokemonStatModifier {
+
+        match stat_type {
+            PokemonStatName::HEALTH => unimplemented!("Illegal"),
+            _ => {
+                // offset by 1 for the stat modifier
+                let stat_idx = (stat_type as usize) - 1;
+                &self.stat_modifier[stat_idx]
+            }
+        }
+    }
 
     pub fn get_pkmn_type(&self) -> Vec<PokemonType> {
         // TODO: Calc this pokemon's current type based on more factors
@@ -137,7 +152,7 @@ impl core::fmt::Display for ActivePokemon {
 /// Generic Event representing a current action in the turn state.
 /// Will include moves, ability/event resolves, etc.
 /// Will think about how to structure this and what types make sense here
-
+#[derive(Clone)]
 pub enum BattleAction<'battle> {
     Move(MoveAction<'battle>), // Pokemon is performing a move
     Status(StatusAction),
@@ -219,11 +234,12 @@ struct BattlePositionVec {
     pub targets: [BattlePosition; 4]
 }
 
-/// Move being performed by Pokemon against another Pokemon
+/// Move being performed by Pokemon
+#[derive(Debug, Clone)]
 pub struct MoveAction<'battle> {
     pub source: BattlePosition,
     pub targets: Vec<BattlePosition>,
-    pub pkm_move: &'battle PokemonMove<'battle>,
+    pub pkm_move: &'battle PokemonMove,
 }
 
 /// Stat Modifier Change being performed
@@ -231,9 +247,11 @@ pub struct MoveAction<'battle> {
 pub struct StatAction {
     pub targets: Vec<BattlePosition>,
     pub stat_name: PokemonStatName,
-    pub change: PokemonStatModifier
+    pub change: PokemonStatModifier,
+    pub pct_chance: PkmnRational
 }
 
+#[derive(Clone)]
 pub struct StatusAction {
     pub targets: Vec<BattlePosition>,
     pub status: PokemonStatus
@@ -247,7 +265,8 @@ pub struct MoveResult {
     pub display_str: String
 }
 
-/// Damage Effect calculated by a move or 
+/// Damage Effect calculated by a move or other source
+#[derive(Clone)]
 pub struct DamageEffect {
     pub target: BattlePosition,
     pub calc_damage: i32,
@@ -262,13 +281,16 @@ pub struct AddEffect {
     pub damage_source: String
 }
 
+/// Enum representing effects from moves & etc
+#[derive(Clone, Copy, Debug)] 
 pub enum BattleEffect {
     Flinch,
-    Trapped
+    Trapped,
+    Confused
 }
 
-pub enum DamageSource<'battle> {
-    Move(PokemonMove<'battle>),
+pub enum DamageSource {
+    Move(PokemonMove),
     Ability(PokemonAbility),
     Status(PokemonStatus)
 }
@@ -283,6 +305,7 @@ pub enum MoveResultEnum {
 
 /// Represents the state of the battle between any action/resolve.
 /// This can include intermediate states
+#[derive(Clone)]
 pub struct BattleState<'battle> {
     pub f_poke1: Option<ActivePokemon>,
     pub f_poke2: Option<ActivePokemon>,
@@ -373,6 +396,7 @@ impl<'battle> BattleState<'battle> {
         action_queue.push_back(new_action);
     }
 
+
     fn get_active_mut(&mut self, position: BattlePosition) -> Option<&mut ActivePokemon> {
         match position {
             BattlePosition::F1 => self.f_poke1.as_mut(),
@@ -382,6 +406,47 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
+    fn get_active(&self, position: BattlePosition) -> Option<&ActivePokemon> {
+        match position {
+            BattlePosition::F1 => self.f_poke1.as_ref(),
+            BattlePosition::F2 => self.f_poke2.as_ref(),
+            BattlePosition::B1 => self.b_poke1.as_ref(),
+            BattlePosition::B2 => self.b_poke2.as_ref(),
+        }
+    }
+
+    fn can_perform_stat(&self, stat_action:&StatAction) -> Vec<BattlePosition> {
+
+            // TODO: Check if blocked by pokemon ability/item
+            // TODO: Check field conditions
+
+            let valid_targets:Vec<&BattlePosition> = stat_action.targets.iter().filter(
+                |pos:&&BattlePosition| {
+                    let t_act_poke = self.get_active(**pos);
+
+                    // Ensure that target pokemon exists
+                    if t_act_poke.is_none() {
+                        return false
+                    }
+
+                    // Check if blocked by ability or item (Clear Body, Covert Cloak)
+
+                    let curr_pkmn = t_act_poke.expect("Non-null effect");
+                    
+                    // Check if stat is maxed, then cancel
+                    let stat_ref = curr_pkmn.get_active_stat_modf(stat_action.stat_name);
+                    if *stat_ref == PokemonStatModifier::MINUS_6 && stat_action.change.direction() == -1 
+                    || *stat_ref == PokemonStatModifier::PLUS_6 && stat_action.change.direction() == 1 {
+                        return false
+                    }
+                    true
+                }
+            ).collect();
+            
+            // NOTE: ugh- the position is getting copied by iter()
+            return valid_targets.iter().copied().copied().collect()
+
+        }
 
     fn can_perform_move(&self, pkm_move:&PokemonMove, move_action: &MoveAction  ) -> bool {
         // check move conditions
@@ -487,6 +552,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Perform stat modifier change for a single pokemon
+    #[deprecated(note="modifies the state directly")]
     fn perform_stat(&mut self, stat_action: StatAction) -> &Self {
 
         for target in stat_action.targets {
@@ -515,6 +581,84 @@ impl<'battle> BattleState<'battle> {
         }
         
         self
+    }
+
+    /// Simulate a stat change
+    fn sim_stat(&self, stat_action: StatAction) -> Vec<BattleContainer<'battle>> {
+
+        // duplicate the battle state
+        let mut state_clone = self.clone();
+
+        // For multiple targets, do I nest results or flatten?
+        // flatten, also cache the independent events probability
+
+        // Get all targets that are hit
+        let valid_targets = self.can_perform_stat(&stat_action);
+        
+        // Build states with permutation of each if not 100%
+        if stat_action.pct_chance == PkmnRational::ONE() {
+            // 1 state with every change
+            for target_pos in valid_targets {
+                state_clone.perform_stat_change(target_pos, &stat_action);
+            }
+            return vec![BattleContainer::simple(state_clone, PkmnRational::ONE())]
+        } else {
+            const POWER_SET:[u32; 2] = [0b1, 0b11];
+            let inverse_chance = PkmnRational::ONE() - stat_action.pct_chance;
+            let pct_container = 
+            match valid_targets.len() {
+                1 => vec![inverse_chance, stat_action.pct_chance],
+                2 => vec![
+                    inverse_chance ^ 2,
+                    (inverse_chance ^ 1) * stat_action.pct_chance ^ 1,
+                    (inverse_chance ^ 1) * stat_action.pct_chance ^ 1,
+                    stat_action.pct_chance ^ 2,
+                ],
+                _ => panic!("Invalid number of targets {}", valid_targets.len())
+            };
+
+            let mut result_bcs = vec![
+                BattleContainer::simple(state_clone, 
+                PkmnRational::ONE() - stat_action.pct_chance ^ valid_targets.len() as u32
+            )];
+            let num_combs = POWER_SET[valid_targets.len()];
+
+            for bin_comb in 1..num_combs {
+                let mut int_clone = self.clone();
+                for (idx,target_pos) in valid_targets.iter().enumerate() {
+                    if (bin_comb >> idx) & 0b1 == 1 {
+                        int_clone.perform_stat_change(*target_pos, &stat_action);
+                    }
+                }
+                result_bcs.push(
+                    BattleContainer::simple(int_clone, 
+                    pct_container[bin_comb as usize])
+                );
+            }
+            
+            return result_bcs
+        }
+
+        // TODO: Log stat change flag on the pokemon
+            // if (stat_changed) {
+            //     let change_dir = if [PokemonStatModifier::MINUS_1, PokemonStatModifier::MINUS_2].contains(&stat_action.change) {"fell"} else {"rose"};
+            //     let final_value = *stat_ref;
+            //     println!("{}'s {} {change_dir} [{:?}]!", target_act_pkmn.pokemon, 
+            //         stat_action.stat_name, 
+            //         final_value,
+            //     );
+            // }
+        
+        // self
+    }
+
+    fn perform_stat_change(&mut self, target_pos:BattlePosition, stat_action: &StatAction) {
+        let target_poke = self.get_active_mut(target_pos);
+        let target_act_pkmn = target_poke.expect("Non-null");
+    
+        let stat_ref= target_act_pkmn.get_active_stat_boost(stat_action.stat_name);
+        // let pre_boost = *stat_ref;
+        *stat_ref += stat_action.change;
     }
 
     /// TODO: Damage actions, might fold this into perform move
@@ -585,6 +729,48 @@ impl<'battle> BattleState<'battle> {
 
     }
 
+    /// Create a list of battle states created from 1 action on the action queue
+    #[allow(unused_mut)] // some actions need to be modified
+    pub fn sim_action(&mut self) -> Vec<BattleContainer<'battle>> {
+        // TODO: sort action queue
+        let action = match self.action_queue.pop_front() {
+                Some(action) => action,
+                None => return vec![]
+            };
+
+
+        match action {
+            BattleAction::Move(mut move_action) => {
+                if !self.can_perform_move(&move_action.pkm_move, &move_action) {
+                    // TODO: set move as failed
+                    return vec![];
+                }
+                // TODO: Check abilities & etc with field to edit move if needed
+                println!("{} used {}!",
+                        self.get_active(move_action.source).unwrap(), 
+                        move_action.pkm_move.name);
+                
+                // self.sim_move(&mut move_action, true)
+            },
+            BattleAction::Stat(mut stat_actions) => {
+                for stat_action in stat_actions {
+                    return self.sim_stat(stat_action)
+                }
+            }
+            _ => {
+                    println!("Not yet implemented {action}")
+            }
+        }
+        
+        
+        return vec![];
+
+        // Ok can nested states occur? yes
+        // For each state, the internal state will create a clone and modify that state to return
+
+        
+    }
+
     pub fn convert_to_action (pre_action:&BattlePreAction, source:BattlePosition) 
     -> BattleAction<'battle> {
         match pre_action {
@@ -597,18 +783,19 @@ impl<'battle> BattleState<'battle> {
                             // NOTE: Only Moves can have ambigious targeting so this should not create new universes
                             targets: BattleState::convert_target_to_position(
                                 stat_c.target_type, 
-                                source)
+                                source),
+                            pct_chance: PkmnRational::from_float(stat_c.accuracy)
                         }
                 });
                 BattleAction::Stat(
                     stat_acts.collect()
                 )
             }
-            _ => unimplemented!("Not yet implemented this stat action")
+            _ => unimplemented!("Not yet implemented this action")
         }
     }
 
-    /// TODO: Return tuple with number targets
+    /// TODO: Return tuple with number of targets
     pub fn convert_target_to_position (target:BattleTarget, 
         source: BattlePosition) -> Vec<BattlePosition> {
             use BattlePosition::*;
