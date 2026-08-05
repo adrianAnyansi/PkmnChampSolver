@@ -1,11 +1,14 @@
 // basic data for Pokemon battles
 
 
-use std::{collections::VecDeque, fmt::write};
+use std::{collections::VecDeque};
 
-pub mod BattleProcessor;
+pub mod battle_processor;
+// use crate::batt
 
-use crate::{battle::BattleProcessor::BattleContainer, math::{PkmnRational, div_and_floor, mult_and_round}, pokemon::{Pokemon, PokemonAbility, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat}};
+use crate::{battle::battle_processor::BattleContainer};
+use crate::math::{PkmnRational, div_and_floor, mult_and_round}; 
+use crate::pokemon::{self, Pokemon, PokemonAbility, PokemonName, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
 
@@ -29,7 +32,7 @@ fn pkmn_damage_formula(power:i32,
     let level_dmg = (2 * LEVEL) / 5 + 2;
     let power_dmg = level_dmg * power * atk_stat;
     let top_damage = div_and_floor(power_dmg, def_stat);
-    let non_mult_dmg = div_and_floor(top_damage, 50) + 2;
+    let non_mult_dmg = div_and_floor(top_damage + 2*50, 50);
     let final_damage = non_mult_dmg;
     // See https://bulbapedia.bulbagarden.net/wiki/Damage#Generation_V_onward for damage formula
     final_damage
@@ -71,6 +74,16 @@ impl ActivePokemon {
                 trained_stats: trained_stat,
                 pokemon: pokemon, // this is moved here
             }
+    }
+
+    pub fn quick(poke_name:PokemonName) -> ActivePokemon {
+        let pokemon = pokemon::get_pkmn(poke_name);
+        ActivePokemon::new(
+            pokemon,
+            PokemonAbility::Nothing,
+            PokemonNature::Quirky,
+            None
+        )
     }
 
     /// This will calculate the full stat spread including boosts
@@ -652,6 +665,93 @@ impl<'battle> BattleState<'battle> {
         // self
     }
 
+    // Simulate a move hit and create states from this
+    fn sim_move(&self, move_action: &MoveAction) -> Vec<BattleContainer<'battle>> {
+        let source_act_pkmn = self.get_active(move_action.source).expect("source must exist");
+        let base_power = move_action.pkm_move.power;
+        // TODO: Special power calculations if needed
+        let move_type = move_action.pkm_move.r#type;
+
+        let atk_stat = match move_action.pkm_move.category {
+            Physical => source_act_pkmn.get_active_stat(PokemonStatName::ATTACK),
+            Special => source_act_pkmn.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
+            _ => 1
+        };
+        let is_stab = [Physical, Special].contains(&move_action.pkm_move.category)
+            && source_act_pkmn.pokemon.has_type(move_action.pkm_move.r#type);
+        
+        let mut result_act_vec: Vec<BattleAction> = vec![];
+
+        let move_targets:Vec<_> = move_action.targets.iter().filter_map(
+            |position| {
+                self.get_active(*position)
+            }
+        )
+        .collect();
+        let num_targets = move_targets.len();
+
+        // Check valid targets on field
+
+        for target_act_pkmn in &move_targets {
+            // let target_pkmn = self.get_active(*target_position);
+            let base_poke = &target_act_pkmn.pokemon;
+            println!("Start calc for target {base_poke}");
+
+            // TODO: Calculate crit, including status and etc effects
+
+            let def_stat = match &move_action.pkm_move.category {
+                Physical => target_act_pkmn.get_active_stat(PokemonStatName::DEFENSE),
+                Special => target_act_pkmn.get_active_stat(PokemonStatName::SPECIAL_DEFENSE),
+                _ => 1
+            };
+            // Check defense overrides
+            
+            let base_damage = pkmn_damage_formula(base_power, atk_stat, def_stat);
+            // rng value
+
+            let mut dmg_modifier_list:VecDeque<f64> = VecDeque::new();
+
+            // STAB multiply
+            dmg_modifier_list.push_back(
+                if is_stab { 1.5
+                // TODO: Adaptability & tera checks
+                } else { 1.0 }
+            );
+
+            // Multi-target multiplier
+            dmg_modifier_list.push_back(
+                if num_targets > 1 {0.75} else {1.0}
+            );
+
+            // Resisting type multiplier
+            dmg_modifier_list.push_back(
+                target_act_pkmn.get_type_mult(move_type) as f64
+            );
+
+            // TODO: Status, other modifiers
+            
+            // Sum up the modifiers
+            let mut calc_dmg = base_damage;
+            while let Some(modifier) = dmg_modifier_list.pop_front() {
+                calc_dmg = mult_and_round(calc_dmg, modifier);
+            };
+
+            // TODO: For basic damage, create a range
+            // for multi-hit, each hit is evaluated independently/added after
+
+            // Trigger DamageEffect
+            let dmg_effect = DamageEffect {
+                target: BattlePosition::B1, // placeholder
+                calc_damage: calc_dmg,
+                damage_source: format!("{target_act_pkmn} took {calc_dmg} damage!")
+            };
+
+            result_act_vec.push(BattleAction::Damage(dmg_effect));
+        }
+
+        vec![]
+    }
+
     fn perform_stat_change(&mut self, target_pos:BattlePosition, stat_action: &StatAction) {
         let target_poke = self.get_active_mut(target_pos);
         let target_act_pkmn = target_poke.expect("Non-null");
@@ -750,7 +850,7 @@ impl<'battle> BattleState<'battle> {
                         self.get_active(move_action.source).unwrap(), 
                         move_action.pkm_move.name);
                 
-                // self.sim_move(&mut move_action, true)
+                return self.sim_move(&mut move_action)
             },
             BattleAction::Stat(mut stat_actions) => {
                 for stat_action in stat_actions {
@@ -822,28 +922,31 @@ mod test {
 
 // use super::*;
 use crate::battle::*;
+use crate::pokemon::PokemonName::{Garchomp, Kingambit};
 use crate::pokemon::poke_stat::PokemonStatName::*;
+use crate::pokemon::*;
+use crate::pokemon::moves::{get_move, PokemonMoveName};
 
     #[test]
+    /// Verify base damage formula using blank Garchomp Draco Meteor vs Kingambit
     fn test_move_calc() {
-        // Using the test of Garchomp Draco Meteor on Kingambit
-        let base_stat = PokemonStats {
-            hp: 0,
-            attack: 0,
-            defense: 0,
-            sp_attack: 80,
-            sp_defense: 85,
-            speed: 0
-        };
-        let power = 130;
-        let atk_stat = get_full_stat(&base_stat, None, SPECIAL_ATTACK);
-        let def_stat = get_full_stat(&base_stat, None, SPECIAL_DEFENSE);
-        let dmg = pkmn_damage_formula(power, atk_stat, def_stat);
+        let garchomp_base_stat = &get_pkmn(Garchomp).base_stats;
+        let kingambit_base_stat = &get_pkmn(Kingambit).base_stats;
+        let draco_move = get_move(PokemonMoveName::Draco_Meteor);
 
-        // stab bonus
+        let atk_stat = get_full_stat(garchomp_base_stat, None, 
+            PokemonStatName::SPECIAL_ATTACK);
+        let def_stat = get_full_stat(kingambit_base_stat, None, 
+            PokemonStatName::SPECIAL_DEFENSE);
+        let dmg = pkmn_damage_formula(draco_move.power, atk_stat, def_stat);
+
+        // stab bonus (Dragon-type)
         let f_dmg = mult_and_round(dmg, 1.5);
-        // type_multiplier
+        // type_multiplier (Steel resist)
         let f2_dmg = mult_and_round(f_dmg, 0.5);
-        assert_eq!(f2_dmg, 42);
+        assert_eq!(f2_dmg, 42); // max damage roll is 42
+
+        let min_dmg = mult_and_round(f2_dmg, 0.85);
+        assert_eq!(min_dmg, 35); // min damage roll is 35
     }
 }

@@ -1,6 +1,4 @@
 
-use rand;
-use rand::rngs::ThreadRng;
 use crate::BattleState;
 use crate::math::{PkmnRational, get_random_int};
 
@@ -57,7 +55,7 @@ impl<'battle> BattleContainer<'battle> {
 }
 
 pub struct BattleProcessor<'battle> {
-    pub battle_state_vec:Vec<BattleContainer<'battle>>,
+    pub battle_ctns:Vec<BattleContainer<'battle>>,
     pub teams:String, // TODO: Implement static teams
     
     /// number of iterations that have occurred
@@ -70,7 +68,7 @@ impl<'battle> BattleProcessor<'battle> {
 
     pub fn new() -> BattleProcessor<'battle>{
         BattleProcessor {
-            battle_state_vec: vec![],
+            battle_ctns: vec![],
             teams: "".to_string(),
             iter_num: 0,
             keep_one_universe: true,
@@ -115,13 +113,13 @@ impl<'battle> BattleProcessor<'battle> {
 
         let mut next_states:Vec<BattleContainer> = vec![];
         // Process each state
-        for battle_ctn in &mut self.battle_state_vec {
+        for battle_ctn in &mut self.battle_ctns {
             next_states.extend(battle_ctn.sim_next_action());
         }
 
         // TODO: After completion, remove fainted / duplicaties
 
-        self.battle_state_vec.clear();
-        self.battle_state_vec.extend(next_states);
+        self.battle_ctns.clear();
+        self.battle_ctns.extend(next_states);
     }
 }

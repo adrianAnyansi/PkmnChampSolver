@@ -1,10 +1,10 @@
 # TODO
 
 Reducing this file so it's just current tasks
-Goal is to keep the task small and 
+Goal is to keep the task small and focused
 
 I'm going to pick 2 teams from the last pokemon champions tourney
-Then simulate the whole match (without universes)
+Then simulate the whole match (without universes*)
 
 Moves/Pokes are implemented
 Next is the Container/processor
@@ -12,7 +12,18 @@ Then verify the damage calculation
 Then speed / priority calculations
 Then implementing teams and draft selection stuff?
 
+## Thoughts
+Very slowly understanding the lifetimes & more
+I need to write all the simulation logic for everything and its hard
+
 ## Today
+
+Then implement the move simulation* logic
+    For move simulation, there can be 3 targets this time
+    and since there are separate accuracy (depending on ablities, state, etc, need function for this)
+
+Write test for the move/type logic
+Need a string for the output/changes per state?
 
 Going to implement the container and have it continue to pick random attacks
 

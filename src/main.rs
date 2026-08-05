@@ -1,4 +1,4 @@
-use crate::battle::BattleProcessor::{BattleContainer, BattleProcessor};
+use crate::battle::battle_processor::{BattleContainer, BattleProcessor};
 use crate::battle::{ActivePokemon, BattlePosition, BattleState};
 use crate::math::PkmnRational;
 use crate::pokemon::types::{PokemonType, get_type_multipler};
@@ -15,10 +15,12 @@ fn main() {
     println!("Pokemon Solver starting up!");
 
     // analyze();
-    garchomp_fight_test();
+    // garchomp_fight_test();
     // make_pokemon_from_file();
 
-    
+    battle_container_test();
+
+
     println!("Pokemon Solver complete!");
 }
 
@@ -100,21 +102,22 @@ fn battle_container_test() {
     bs.f_poke1 = Some(
         ActivePokemon::new(venusaur, 
             pokemon::PokemonAbility::Nothing, 
-            pokemon::poke_stat::PokemonNature::Brave, None)
+            pokemon::poke_stat::PokemonNature::Brave, 
+            None)
     );
     bs.b_poke1 = Some(ActivePokemon::new(garchomp, 
         pokemon::PokemonAbility::Nothing, 
         pokemon::poke_stat::PokemonNature::Brave, 
         None));
 
-    println!("Created {} {} pokemon", venusaur, garchomp);
+    println!("Created {}, {} pokemon", venusaur, garchomp);
 
     let bc = BattleContainer {
         battle_ctns: vec![],
         battle_state: Some(bs),
         pct_chance: PkmnRational::ONE()
     };
-    battle_processor.battle_state_vec.push(bc);
+    battle_processor.battle_ctns.push(bc);
 
     // get the container
 }

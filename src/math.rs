@@ -5,11 +5,11 @@ use rand::rngs::ThreadRng;
 /// Multiplies an integer by a float and floors the result to the nearest integer.
 /// Used to calculate many stat modifications and damage rolls
 pub fn mult_and_round(a: i32, b: f64) -> i32 {
-    (a as f64 * b).round() as i32
+    (a as f64 * b).floor() as i32
 }
 
 pub fn div_and_floor(a: i32, b: i32) -> i32 {
-    (a as f64 / b as f64).round() as i32
+    (a as f64 / b as f64).floor() as i32
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -139,7 +139,7 @@ impl std::ops::Sub for PkmnRational {
 
     fn sub(self, rhs: Self) -> Self {
         return Self { numer: 
-            rhs.numer * self.demon as i32 - self.numer * rhs.demon as i32, 
+            self.numer * rhs.demon as i32 - rhs.numer * self.demon as i32, 
             demon: rhs.demon * self.demon 
         };
     }
@@ -161,6 +161,16 @@ impl std::ops::Mul<PkmnRational> for PkmnRational {
     }
 }
 
+impl std::ops::MulAssign<PkmnRational> for PkmnRational {
+    fn mul_assign(&mut self, rhs: PkmnRational) {
+        self.numer *= rhs.numer;
+        self.demon *= rhs.demon;
+        if self.demon > PkmnRational::REDUCE_MIN {
+            self.reduce();
+        }
+    }
+}
+
 impl std::ops::BitXor<u32> for PkmnRational {
     type Output = Self;
 
@@ -169,6 +179,66 @@ impl std::ops::BitXor<u32> for PkmnRational {
     }
 }
 
+impl std::iter::Product for PkmnRational {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(PkmnRational::ONE(), |mut acc, v| {
+            acc *= v;
+            acc
+        })
+    }
+}
+
+impl<'a> std::iter::Product<&'a PkmnRational> for PkmnRational {
+    fn product<I: Iterator<Item = &'a PkmnRational>>(iter: I) -> Self {
+        iter.fold(PkmnRational::ONE(), |mut acc, v| {
+            acc *= *v;
+            acc
+        })
+    }
+}
+
+/// return a generator with all probablities distributions
+pub fn gen_power_set(probs:Vec<PkmnRational>) -> Vec<PkmnRational> {
+
+    let inverse_probs:Vec<PkmnRational> = probs.iter().map(
+        |prob| PkmnRational::ONE() - *prob
+    ).collect();
+
+    // TODO: Make this an generator with internal state
+    /*
+    See
+        fn counter(start: i32, end: i32) -> impl Iterator<Item = i32> {
+        let mut cur = start;
+        std::iter::from_fn(move || {
+            if cur <= end {
+                let out = cur;
+                cur += 1;
+                Some(out)
+            } else {
+                None
+            }
+        })
+    }
+     */
+    
+    let power_set_total = 0b1 << probs.len();
+    let mut result_probs:Vec<PkmnRational> = vec![];
+    for bin_comb in 0..power_set_total {
+        let mut curr_prob = PkmnRational::ONE();
+        for idx in 0..probs.len() {
+            let digit = (bin_comb >> idx) & 0b1;
+            let mult_prob:PkmnRational = if digit == 0 {
+                inverse_probs[idx]
+            } else {
+                probs[idx]
+            };
+            curr_prob *= mult_prob;
+        }
+        result_probs.push(curr_prob);
+    }
+    // calc each probably up to the power_set total
+    result_probs
+}
 
 
 // TODO: Use this rng thread 
@@ -176,6 +246,7 @@ pub fn getRNGThread() -> ThreadRng {
     return rand::rng();
 }
 
+/// Get a random integer from random thread
 pub fn get_random_int(low:u32, high:u32) -> u32 {
     let rng_float = rand::random::<f64>(); // get between [0, 1)
     
@@ -299,5 +370,90 @@ mod tests {
 
         // operator form delegates to the same multiplication-based power logic.
         assert_eq!(r ^ 3, PkmnRational::new(8, 27));
+    }
+
+    #[test]
+    fn test_rational_product() {
+        let vals = vec![
+            PkmnRational::new(1, 2),
+            PkmnRational::new(3, 4),
+            PkmnRational::new(5, 6),
+        ];
+
+        // 1/2 * 3/4 * 5/6 = 15/48 = 5/16
+        let by_ref: PkmnRational = vals.iter().product();
+        assert_eq!(by_ref, PkmnRational::new(5, 16));
+
+        let by_value: PkmnRational = vals.into_iter().product();
+        assert_eq!(by_value, PkmnRational::new(5, 16));
+    }
+
+    #[test]
+    fn test_gen_power_set_same_probability_1_to_3() {
+        let p = PkmnRational::new(1, 4);
+        let q = PkmnRational::new(3, 4);
+
+        let cases: Vec<Vec<PkmnRational>> = vec![
+            vec![q, p],
+            vec![q * q, p * q, q * p, p * p],
+            vec![
+                q * q * q,
+                p * q * q,
+                q * p * q,
+                p * p * q,
+                q * q * p,
+                p * q * p,
+                q * p * p,
+                p * p * p,
+            ],
+        ];
+
+        for expected in cases {
+            let probs = vec![p; expected.len().ilog2() as usize];
+            let dist = gen_power_set(probs);
+
+            assert_eq!(dist.len(), expected.len());
+            for idx in 0..expected.len() {
+                assert_eq!(dist[idx], expected[idx]);
+            }
+
+            let mut total = PkmnRational::ZERO();
+            for prob in dist {
+                total += prob;
+            }
+            assert_eq!(total, PkmnRational::ONE());
+        }
+    }
+
+    #[test]
+    fn test_gen_power_set_three_different_probabilities() {
+        let probs = vec![
+            PkmnRational::new(1, 5),
+            PkmnRational::new(1, 3),
+            PkmnRational::new(1, 4),
+        ];
+
+        let dist = gen_power_set(probs);
+        let expected = vec![
+            PkmnRational::new(2, 5),
+            PkmnRational::new(1, 10),
+            PkmnRational::new(1, 5),
+            PkmnRational::new(1, 20),
+            PkmnRational::new(2, 15),
+            PkmnRational::new(1, 30),
+            PkmnRational::new(1, 15),
+            PkmnRational::new(1, 60),
+        ];
+
+        assert_eq!(dist.len(), expected.len());
+        for idx in 0..expected.len() {
+            assert_eq!(dist[idx], expected[idx]);
+        }
+
+        let mut total = PkmnRational::ZERO();
+        for prob in dist {
+            total += prob;
+        }
+        assert_eq!(total, PkmnRational::ONE());
     }
 }
