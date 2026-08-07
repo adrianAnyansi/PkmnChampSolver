@@ -1,4 +1,5 @@
 // moves and information
+#![allow(dead_code)]
 
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
@@ -15,7 +16,7 @@ pub enum PokemonMoveCategory {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumString, Display)]
 pub enum BattleTarget {
     /// Target 1 opponent
     OPPONENT,
@@ -57,8 +58,8 @@ pub struct PokemonMove {
 #[derive(Debug, Copy, Clone)]
 pub enum MoveEffect {
     Stat(StatChange),
-    Status(PokemonStatus, PkmnRational),
-    General(BattleEffect, PkmnRational)
+    Status(PokemonStatus, BattleTarget, PkmnRational),
+    General(BattleEffect, BattleTarget, PkmnRational)
 }
 
 /// Indicates a change in stat boosts
@@ -166,9 +167,10 @@ impl<'simulation> PokemonMove {
 
     pub fn status_effect(mut self,
         status_type:PokemonStatus,
-        chance:PkmnRational) -> Self {
+        chance:PkmnRational,
+        target:BattleTarget,) -> Self {
 
-            self.hit_actions.push(MoveEffect::Status(status_type, chance));
+            self.hit_actions.push(MoveEffect::Status(status_type, target, chance));
             self
         }
 
@@ -180,12 +182,23 @@ impl<'simulation> PokemonMove {
 
     pub fn add_flinch(mut self,
         chance:PkmnRational) -> Self {
-            // let flinch_chance = 0;
             self.hit_actions.push(MoveEffect::General(
-                BattleEffect::Flinch, chance));
+                BattleEffect::Flinch, BattleTarget::OPPONENT, chance));
             self
     }
 
+
+    // Move issues
+
+    pub fn is_attack(&self) -> bool {
+        self.category != PokemonMoveCategory::Status
+    }
+
+    pub fn is_status(&self) -> bool {
+        self.category == PokemonMoveCategory::Status
+    }
+
+    #[deprecated]
     pub fn after_hit (&self, 
         battle_state:&BattleState) -> Vec<BattlePreAction> {
         use PokemonMoveName::*;
@@ -228,6 +241,7 @@ impl<'simulation> PokemonMove {
         }
     }
 
+    #[deprecated(note="move to data backed version")]
     pub fn intn_condition_check (&self, 
         battle_state:&BattleState, 
         move_action:&MoveAction) -> bool {
@@ -365,7 +379,9 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             PokemonType::POISON,
             PokemonMoveCategory::Special,
         ).set_attr(90, 1.0, OPPONENT)
-        .status_effect(PokemonStatus::POISONED, PkmnRational::new(30, 100)),
+        .status_effect(PokemonStatus::POISONED, 
+             PkmnRational::new(30, 100),
+            BattleTarget::OPPONENT),
 
         PokemonMoveName::Earth_Power => PokemonMove::new(
             PokemonMoveName::Earth_Power,
@@ -378,13 +394,13 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Sleep_Powder => PokemonMove::status(
             pkmn_move_name, GRASS, ANY
         ).set_attr(0, 0.75, ANY)
-        .status_effect(SLEEP, PkmnRational::ONE())
+        .status_effect(SLEEP, PkmnRational::ONE(), OPPONENT)
         .add_flag("Powder"),
 
         PokemonMoveName::Heat_Wave => PokemonMove::new(
             pkmn_move_name, FIRE, Special
         ).set_attr(95, PkmnRational::pct(90).float(), OPPONENT_ALL)
-        .status_effect(BURNED, PkmnRational::pct(10)),
+        .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,),
 
         
         PokemonMoveName::Solar_Beam => PokemonMove::new(
@@ -432,7 +448,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Flare_Blitz => PokemonMove::new(
             pkmn_move_name, FIRE, Physical
         ).set_attr(120, 1.0, OPPONENT)
-        .status_effect(BURNED, PkmnRational::pct(10))
+        .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
         .add_flag("recoil 1/3"),
 
 
@@ -464,7 +480,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Matcha_Gotcha => PokemonMove::new(
             pkmn_move_name, GRASS, Special
         ).set_power(80).set_target(OPPONENT_ALL)
-        .status_effect(BURNED, PkmnRational::pct(20))
+        .status_effect(BURNED, PkmnRational::pct(20), BattleTarget::OPPONENT,)
         .add_flag("recover 1/2"),
 
         Rage_Powder => PokemonMove::status(
@@ -485,9 +501,9 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Dire_Claw => PokemonMove::new(
             pkmn_move_name, POISON, Physical
         ).set_power(80)
-        .status_effect(BURNED, PkmnRational::pct(10))
-        .status_effect(PARALYZED, PkmnRational::pct(10))
-        .status_effect(SLEEP, PkmnRational::pct(10))
+        .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
+        .status_effect(PARALYZED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
+        .status_effect(SLEEP, PkmnRational::pct(10), BattleTarget::OPPONENT,)
         .add_flag("slicing"),
         
         Swords_Dance => PokemonMove::status(
@@ -513,12 +529,12 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Will_O_Wisp => PokemonMove::status(
             pkmn_move_name, FIRE, OPPONENT
         ).set_attr(0, PkmnRational::pct(85).float(), OPPONENT)
-        .status_effect(BURNED, PkmnRational::ONE()),
+        .status_effect(BURNED, PkmnRational::ONE(), BattleTarget::OPPONENT),
         
         Thunderbolt => PokemonMove::new(
             pkmn_move_name, ELECTRIC, Special
         ).set_power(90)
-        .status_effect(PARALYZED, PkmnRational::pct(10)),
+        .status_effect(PARALYZED, PkmnRational::pct(10), BattleTarget::OPPONENT,),
 
         Hydro_Pump => PokemonMove::new(
             pkmn_move_name, WATER, Special

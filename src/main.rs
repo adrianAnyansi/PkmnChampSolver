@@ -111,13 +111,19 @@ fn battle_container_test() {
         None));
 
     println!("Created {}, {} pokemon", venusaur, garchomp);
+    let sludge_bomb_move = &pokemon::moves::get_move(PokemonMoveName::Sludge_Bomb);
 
-    let bc = BattleContainer {
-        battle_ctns: vec![],
-        battle_state: Some(bs),
-        pct_chance: PkmnRational::ONE()
-    };
+    BattleState::queue_move(&mut bs.action_queue, 
+        BattlePosition::F1, 
+        sludge_bomb_move, 
+        vec![BattlePosition::B1]);
+
+    // make the root container
+    let bc = BattleContainer::simple(bs, 
+    PkmnRational::ONE());
     battle_processor.battle_ctns.push(bc);
 
-    // get the container
+    // Simulate container
+    battle_processor.process_all_states_by_one();
+
 }

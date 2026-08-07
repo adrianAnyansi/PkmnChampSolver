@@ -456,4 +456,14 @@ mod tests {
         }
         assert_eq!(total, PkmnRational::ONE());
     }
+
+    #[test]
+    /// Test the identity for the power_set
+    fn test_get_power_set_one () {
+        let result = gen_power_set(vec![PkmnRational::ONE()]);
+
+        print!("{}", result[0]);
+        assert_eq!(result[0], PkmnRational::ZERO());
+        assert_eq!(result[1], PkmnRational::ONE());
+    }
 }

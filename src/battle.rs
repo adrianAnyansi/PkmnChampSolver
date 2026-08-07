@@ -1,13 +1,15 @@
 // basic data for Pokemon battles
+#![allow(dead_code)]
 
-
+use std::clone;
 use std::{collections::VecDeque};
 
 pub mod battle_processor;
 // use crate::batt
 
+use crate::pokemon::moves::MoveEffect;
 use crate::{battle::battle_processor::BattleContainer};
-use crate::math::{PkmnRational, div_and_floor, mult_and_round}; 
+use crate::math::{PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
 use crate::pokemon::{self, Pokemon, PokemonAbility, PokemonName, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
@@ -267,7 +269,19 @@ pub struct StatAction {
 #[derive(Clone)]
 pub struct StatusAction {
     pub targets: Vec<BattlePosition>,
-    pub status: PokemonStatus
+    pub status: PokemonStatus,
+    pub accuracy: PkmnRational
+}
+
+
+/// Battle action with generic target/accuracy 
+pub struct BattleActionCtn<'battle> {
+    /// Action type
+    pub action: BattleAction<'battle>,
+    // action type/enum
+    pub targets: Vec<BattlePosition>,
+    pub accuracy: PkmnRational
+
 }
 
 /// Actions needed to be taken by calculated move
@@ -356,6 +370,15 @@ impl<'battle> BattleState<'battle> {
             action_queue: VecDeque::new(),
             turn_num: 0,
         }
+    }
+
+    pub fn simple (f_poke:ActivePokemon, 
+        b_poke:ActivePokemon) -> Self {
+            let mut bs = BattleState::new();
+            bs.f_poke1 = Some(f_poke);
+            bs.b_poke1 = Some(b_poke);
+
+            bs
     }
 
     fn get_default_poke_name (poke:&Option<ActivePokemon>) -> String {
@@ -493,7 +516,7 @@ impl<'battle> BattleState<'battle> {
             let target_pkmn = self.get_active_mut(*target_position).expect("target must exist");
             
             let poke = &target_pkmn.pokemon;
-            println!("Start calc for target {poke}");
+            println!("Start damage calc {} for target {poke}", move_action.pkm_move.name);
 
             // TODO: Calculate crit, including status and etc effects
             // let is_crit = false;
@@ -530,7 +553,7 @@ impl<'battle> BattleState<'battle> {
 
             // other modifiers
             
-            // Finally
+            // Finally sum these up
             while let Some(modifier) = dmg_modifier_list.pop_front() {
                 def_dmg = mult_and_round(def_dmg, modifier);
             };
@@ -636,6 +659,11 @@ impl<'battle> BattleState<'battle> {
             )];
             let num_combs = POWER_SET[valid_targets.len()];
 
+            let fn_stat_change = 
+            |state: &mut BattleState<'battle>, target_pos:&BattlePosition| {
+                state.perform_stat_change(*target_pos, &stat_action);
+            };
+
             for bin_comb in 1..num_combs {
                 let mut int_clone = self.clone();
                 for (idx,target_pos) in valid_targets.iter().enumerate() {
@@ -665,9 +693,46 @@ impl<'battle> BattleState<'battle> {
         // self
     }
 
+    /// Simulate performing a status to the change
+    fn sim_status(&self, status_action: StatusAction) -> Vec<BattleContainer<'battle>> {
+
+        // TODO: Validate status is not blocked by field/battle
+        // let valid_targets = self.can_perform_status(&status_action);
+        // NOTE: Targets is always 1 for status
+        let valid_targets = &status_action.targets;
+        // TODO: If target is impossible, quit returning base state
+
+        // Build result vec
+        let mut result_vecs:Vec<BattleContainer> = vec![];
+        // TODO: Put this into the status Action like a normal person
+        let prob_set = gen_power_set(
+            vec![status_action.accuracy; valid_targets.len()]);
+        
+        // for each combination in the power_set, I need to edit the cloned battle state
+        // and then add to queue if anything triggers
+        for (bin_comb, rat) in prob_set.iter().enumerate() {
+            let prob = prob_set[bin_comb];
+            if prob == PkmnRational::ZERO() { continue; }
+            let mut clone_state = self.clone();
+            for target in valid_targets {
+                // perform status change on clone
+                clone_state.perform_status_change(*target, &status_action);
+            }
+            result_vecs.push(
+                BattleContainer::simple(clone_state, *rat));
+        }
+
+        result_vecs
+    }
+
     // Simulate a move hit and create states from this
     fn sim_move(&self, move_action: &MoveAction) -> Vec<BattleContainer<'battle>> {
         let source_act_pkmn = self.get_active(move_action.source).expect("source must exist");
+
+        if move_action.pkm_move.is_attack() {
+            // TODO: If attack, do base_power calculations
+        }
+
         let base_power = move_action.pkm_move.power;
         // TODO: Special power calculations if needed
         let move_type = move_action.pkm_move.r#type;
@@ -680,22 +745,30 @@ impl<'battle> BattleState<'battle> {
         let is_stab = [Physical, Special].contains(&move_action.pkm_move.category)
             && source_act_pkmn.pokemon.has_type(move_action.pkm_move.r#type);
         
-        let mut result_act_vec: Vec<BattleAction> = vec![];
 
-        let move_targets:Vec<_> = move_action.targets.iter().filter_map(
+        // TODO: Move this to function call
+        let move_targets:Vec<(&ActivePokemon, &BattlePosition)> = move_action.targets.iter().filter_map(
             |position| {
-                self.get_active(*position)
+                let poke = self.get_active(*position);
+                if poke.is_some() {
+                    return Some((poke.unwrap(), position))
+                } else {
+                    return None
+                }
             }
         )
         .collect();
         let num_targets = move_targets.len();
+        // let mut result_bcs:Vec<BattleContainer> = vec![];
+        let mut result_queue:Vec<Vec<BattleAction>> = vec![];
 
-        // Check valid targets on field
-
-        for target_act_pkmn in &move_targets {
-            // let target_pkmn = self.get_active(*target_position);
+        // Check valid targets on field and calc hit
+        for (target_act_pkmn, target_pos) in &move_targets {
+            
+            // Contains resulting actions from move hit
+            let mut result_act_vec: Vec<BattleAction> = vec![];
             let base_poke = &target_act_pkmn.pokemon;
-            println!("Start calc for target {base_poke}");
+            println!("Start damage calc for target {base_poke}");
 
             // TODO: Calculate crit, including status and etc effects
 
@@ -707,10 +780,11 @@ impl<'battle> BattleState<'battle> {
             // Check defense overrides
             
             let base_damage = pkmn_damage_formula(base_power, atk_stat, def_stat);
-            // rng value
+            // rng value is calced here
 
             let mut dmg_modifier_list:VecDeque<f64> = VecDeque::new();
 
+            // NOTE: Ignore 1.0 issues
             // STAB multiply
             dmg_modifier_list.push_back(
                 if is_stab { 1.5
@@ -739,17 +813,122 @@ impl<'battle> BattleState<'battle> {
             // TODO: For basic damage, create a range
             // for multi-hit, each hit is evaluated independently/added after
 
+            let bat_pos = **target_pos;
             // Trigger DamageEffect
             let dmg_effect = DamageEffect {
-                target: BattlePosition::B1, // placeholder
+                target: bat_pos, // TODO: Change to be pokemon
                 calc_damage: calc_dmg,
                 damage_source: format!("{target_act_pkmn} took {calc_dmg} damage!")
             };
-
+            
             result_act_vec.push(BattleAction::Damage(dmg_effect));
+            
+            // let mut cloned_state = self.clone();
+
+            // Process secondary effects and add to queue
+            use crate::pokemon::moves::MoveEffect;
+            if move_action.pkm_move.hit_actions.len() > 0 {
+                
+                // generate on hit effects to the action queue
+                for hit_action in &move_action.pkm_move.hit_actions {
+
+                    // TODO: All move_effects should contain targetting and pct_chance
+                    // So the battle_action conversion is generic
+                    let b_action:Option<BattleAction> = match hit_action {
+                        effect @ MoveEffect::Stat(stat_change) => {
+                            let stat_target_pos = BattleState::convert_effect_target_to_position(
+                                stat_change.target_type, move_action.source, Some(**target_pos));
+
+                            // NOTE: Stats are not combined*
+                            Some(BattleState::convert_effect_to_baction(
+                                effect,
+                                stat_target_pos))
+                            },
+                        MoveEffect::Status(_, target, _rat) |
+                        MoveEffect::General(_, target, _rat) => {
+                            let status_target_pos = BattleState::convert_effect_target_to_position(
+                                *target, move_action.source, Some(**target_pos));
+                            
+                            Some(BattleState::convert_effect_to_baction(hit_action, status_target_pos))
+                        }
+                        _ => {println!("WARNING: MoveEffect not implemented"); None}
+                    };
+
+                    if let Some(action) = b_action {
+                        // NOTE: hit_Action order should not matter*
+                        // cloned_state.action_queue.push_front(action);
+                        result_act_vec.push(action);
+                    }
+                }
+            } // 2nd effects are done
+            
+            result_queue.push(result_act_vec);
+            // let mut cloned_state = self.clone();
+            // // TODO: This should prepend in order
+            // cloned_state.action_queue.extend(result_act_vec);
+
+            // let move_acc = PkmnRational::from_float(move_action.pkm_move.accuracy);
+            // result_bcs.push(
+            //     BattleContainer::simple(cloned_state, 
+            //         move_acc) // TODO: Use probablity of move hitting
+            // );
+
+            
         }
 
-        vec![]
+        // TODO: Accuracy can change based on defender, validate this
+        let prob_set = gen_power_set(
+            vec![PkmnRational::from_float(move_action.pkm_move.accuracy); num_targets]);
+
+        let add_to_queue = 
+        |state:&mut BattleState<'battle>, battle_actions:&Vec<BattleAction<'battle>>| {
+            for ba in battle_actions.iter().rev() {
+                // NOTE this is cloned because multiple borrow occurs
+                state.action_queue.push_front(ba.clone());
+            }
+        };
+
+        let mut result_bcs:Vec<BattleContainer> = Vec::new();
+        for (bin_comb, rat) in prob_set.iter().enumerate() {
+            if *rat == PkmnRational::ZERO() {continue;}
+            let mut cloned_state = self.clone();
+            for (idx,target_pos) in move_targets.iter().enumerate() {
+                    if (bin_comb >> idx) & 0b1 == 1 {
+                        add_to_queue(&mut cloned_state, &result_queue[idx]);
+                        // int_clone.perform_stat_change(*target_pos, &stat_action);
+                    }
+                }
+            result_bcs.push(BattleContainer::simple(cloned_state, *rat))
+        }
+        // Now return all the new battle_states that occur
+        result_bcs
+    }
+
+    // TODO: Complete this later, its important
+    fn spawn_bcs_for_power_set<F> (self, prob_set:&[PkmnRational], 
+        mut apply_func:F)
+        where
+            F: FnMut(&mut BattleState<'battle>),
+         {
+
+        let mut result_bcs = vec![];
+        // indep events are based on targets so far
+        let valid_targets:Vec<BattlePosition> = Vec::new();
+        for bin_comb in 1..prob_set.len() {
+            if prob_set[bin_comb as usize] == PkmnRational::ZERO() {continue;}
+        
+            let mut int_clone = self.clone();
+            for (idx,target_pos) in valid_targets.iter().enumerate() {
+                if (bin_comb >> idx) & 0b1 == 1 {
+                    apply_func(&mut int_clone);
+                    // int_clone.perform_stat_change(*target_pos, &stat_action);
+                }
+            }
+            result_bcs.push(
+                BattleContainer::simple(int_clone, 
+                prob_set[bin_comb as usize])
+            );
+        }
     }
 
     fn perform_stat_change(&mut self, target_pos:BattlePosition, stat_action: &StatAction) {
@@ -759,6 +938,13 @@ impl<'battle> BattleState<'battle> {
         let stat_ref= target_act_pkmn.get_active_stat_boost(stat_action.stat_name);
         // let pre_boost = *stat_ref;
         *stat_ref += stat_action.change;
+    }
+
+    fn perform_status_change(&mut self, target_pos:BattlePosition, status_action: &StatusAction) {
+        let target_poke = self.get_active_mut(target_pos);
+        let target_act_pkmn = target_poke.expect("Must be non-null");
+
+        target_act_pkmn.status = status_action.status;
     }
 
     /// TODO: Damage actions, might fold this into perform move
@@ -856,6 +1042,12 @@ impl<'battle> BattleState<'battle> {
                 for stat_action in stat_actions {
                     return self.sim_stat(stat_action)
                 }
+            },
+            BattleAction::Status(mut status_action) => {
+                return self.sim_status(status_action)
+            }
+            BattleAction::Damage(mut dmg_action) => {
+
             }
             _ => {
                     println!("Not yet implemented {action}")
@@ -871,6 +1063,8 @@ impl<'battle> BattleState<'battle> {
         
     }
 
+    /// Convert a PreAction to a BattleAction
+    #[deprecated]
     pub fn convert_to_action (pre_action:&BattlePreAction, source:BattlePosition) 
     -> BattleAction<'battle> {
         match pre_action {
@@ -895,6 +1089,41 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
+    /// Convert a MoveEffect to an Action with Damage/Status/etc
+    /// Targets must be determined before calling this
+    pub fn convert_effect_to_baction (move_effect:&MoveEffect, 
+        effect_target_pos:BattlePosition)
+    -> BattleAction<'battle> {
+
+        match move_effect {
+            MoveEffect::Status(status_chg, 
+                    _target,  rat) => {
+                // NOTE: StatusAction has a single target
+                let status_act = 
+                    StatusAction {
+                        targets: vec![effect_target_pos],
+                        status: *status_chg,
+                        accuracy: *rat
+                    };
+                BattleAction::Status(status_act)
+            },
+            MoveEffect::Stat(stat_c) => {
+                // TODO: Is multiple targets/stats worth it
+                let stat_act = 
+                        StatAction {
+                            stat_name: stat_c.name,
+                            change: stat_c.change,
+                            targets: vec![effect_target_pos],
+                            pct_chance: PkmnRational::from_float(stat_c.accuracy)
+                        };
+                    
+                // NOTE: multiple stats are allowed but not used right now
+                BattleAction::Stat(vec![stat_act])
+            },
+            _ => panic!("Not like this")
+        }
+    }
+
     /// TODO: Return tuple with number of targets
     pub fn convert_target_to_position (target:BattleTarget, 
         source: BattlePosition) -> Vec<BattlePosition> {
@@ -913,6 +1142,19 @@ impl<'battle> BattleState<'battle> {
             BattleTarget::OPPONENT => vec![source.get_opposing()],
             BattleTarget::OPPONENT_ALL => source.get_opposing_team(),
             BattleTarget::ALL_SELF => vec![F1, F2, B1, B2],
+        }
+    }
+
+    /// Convert Effect Target to Position, intended for non-move targeting
+    pub fn convert_effect_target_to_position (
+        target: BattleTarget,
+        source: BattlePosition,
+        dest: Option<BattlePosition>,
+    ) -> BattlePosition {
+        match target {
+            BattleTarget::SELF => source,
+            BattleTarget::OPPONENT | BattleTarget::ALLY => dest.unwrap_or(source),
+            _ => panic!("Invalid target {:?}", target)
         }
     }
 }
@@ -949,4 +1191,36 @@ use crate::pokemon::moves::{get_move, PokemonMoveName};
         let min_dmg = mult_and_round(f2_dmg, 0.85);
         assert_eq!(min_dmg, 35); // min damage roll is 35
     }
+
+    #[test]
+    fn test_move_accuracy_sim() {
+
+        let ttar_pkmn = ActivePokemon::quick(PokemonName::Tyranitar);
+        let ven_pkmn = ActivePokemon::quick(PokemonName::Venusaur);
+
+        let mut bs = BattleState::simple(ttar_pkmn, ven_pkmn);
+        let hydro_pump = get_move(PokemonMoveName::Hydro_Pump);
+        BattleState::queue_move(&mut bs.action_queue, 
+            BattlePosition::F1, &hydro_pump, 
+            vec![BattlePosition::B1]);
+
+        let mut root_bc = BattleContainer::simple(bs, PkmnRational::ONE());
+        root_bc.sim_next_action();
+
+        assert_eq!(root_bc.pct_chance, PkmnRational::ONE());
+        // expect 2 bcs, one where hydro misses, another with hit
+        assert_eq!(root_bc.battle_ctns.len(), 2);
+        // 1st bc should have 1-pct_chance and no queue
+        assert_eq!(root_bc.battle_ctns[0].pct_chance, 
+            PkmnRational::ONE() - PkmnRational::from_float(hydro_pump.accuracy));
+        assert!(root_bc.battle_ctns[0].battle_state.is_some());
+        assert_eq!(root_bc.battle_ctns[0].battle_state
+            .as_ref().unwrap().action_queue.len(), 0);
+        // 2nd bc should have hydro pump damage
+        assert!(root_bc.battle_ctns[1].battle_state.is_some());
+        assert_eq!(root_bc.battle_ctns[1].battle_state
+            .as_ref().unwrap().action_queue.len(), 1);
+    }
+
+
 }

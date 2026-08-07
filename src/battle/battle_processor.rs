@@ -1,5 +1,6 @@
 
 use crate::BattleState;
+use crate::battle::BattleAction;
 use crate::math::{PkmnRational, get_random_int};
 
 
@@ -7,7 +8,8 @@ use crate::math::{PkmnRational, get_random_int};
 pub struct BattleContainer<'battle> {
     pub battle_ctns: Vec<BattleContainer<'battle>>,
     pub battle_state: Option<BattleState<'battle>>,
-    pub pct_chance: PkmnRational
+    pub pct_chance: PkmnRational,
+    pub message: String,
 }
 
 impl<'battle> BattleContainer<'battle> {
@@ -16,7 +18,8 @@ impl<'battle> BattleContainer<'battle> {
         BattleContainer {
             battle_ctns: vec![],
             battle_state: None,
-            pct_chance: PkmnRational::ONE()
+            pct_chance: PkmnRational::ONE(),
+            message: String::new()
         }
     }
 
@@ -25,33 +28,43 @@ impl<'battle> BattleContainer<'battle> {
             BattleContainer {
                 battle_ctns: vec![],
                 battle_state: Some(battle_state),
-                pct_chance
+                pct_chance,
+                message: String::new()
             }
         }
 
-    // processes all states and returns the updated container of all consequences
+    /// processes all states and modifies to the next state
     // TODO: Send hashes to dedup
-    pub fn sim_next_action(&mut self) -> Vec<BattleContainer<'battle>> {
+    pub fn sim_next_action(&mut self) {
 
-        let mut new_states:Vec<BattleContainer> = vec![];
+        // let mut new_states:Vec<BattleContainer> = vec![];
         if self.battle_state.is_some() {
             // TODO: I need to pop the queue to do this, has to be mut
             let b_state = self.battle_state.as_mut().unwrap();
 
             let new_bcs:Vec<BattleContainer<'battle>> = b_state.sim_action();
-            
-            // TODO: Need to fold the pct with a new bc
-            new_states.extend(new_bcs);
+
+            if new_bcs.len() == 1 {
+                // Need to iterate & consume the vector
+                let b_ctn = new_bcs.into_iter().next().unwrap();
+                self.battle_state = b_ctn.battle_state;
+            } else {
+                // if zero, end (or panic)
+                self.battle_ctns = new_bcs;
+                self.battle_state = None
+            }
+        } else {
+            // NOTE: Should not have battle_state & containers
+            // process internal states
+            for battle_ctn in &mut self.battle_ctns {
+                // TODO: Fix later
+                // new_states.extend(battle_ctn.sim_next_action());
+            }
         }
         
-        // NOTE: Should not have battle_state & containers
-        // process internal states
-        for battle_ctn in &mut self.battle_ctns {
-            new_states.extend(battle_ctn.sim_next_action());
-        }
-        
-        return new_states
+        // return new_states
     }
+
 }
 
 pub struct BattleProcessor<'battle> {
@@ -111,15 +124,18 @@ impl<'battle> BattleProcessor<'battle> {
     /// Process all battleStates to the next iteration
     pub fn process_all_states_by_one(&mut self) {
 
-        let mut next_states:Vec<BattleContainer> = vec![];
+        // let mut next_states:Vec<BattleContainer> = vec![];
         // Process each state
+        // TODO: Process until state terminates
         for battle_ctn in &mut self.battle_ctns {
-            next_states.extend(battle_ctn.sim_next_action());
+            battle_ctn.sim_next_action();
         }
+
+        // battle_ctn.sim_next_action();
 
         // TODO: After completion, remove fainted / duplicaties
 
-        self.battle_ctns.clear();
-        self.battle_ctns.extend(next_states);
+        // self.battle_ctns.clear();
+        // self.battle_ctns.extend(next_states);
     }
 }
