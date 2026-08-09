@@ -7,7 +7,7 @@ mod battle;
 mod pokemon;
 mod math;
 use crate::pokemon::PokemonName;
-use crate::pokemon::moves::PokemonMoveName;
+use crate::pokemon::moves::PokemonMoveName::{self};
 
 // #[allow(unused)]
 
@@ -22,28 +22,6 @@ fn main() {
 
 
     println!("Pokemon Solver complete!");
-}
-
-
-fn analyze() {
-    // TODO: take some input
-    let type_a = PokemonType::BUG;
-    let type_b = PokemonType::FLYING;
-    println!("Type A is {type_a} AND B is {type_b}");
-
-    println!("Calculating type matchup...");
-    let type_result = get_type_multipler(type_a, type_b);
-    println!("{type_a} attacks on {type_b} do x{type_result} damage");
-
-    // let mut poke_str = "Garchomp";
-    // let poke = pokemon::poke_stat::get_pkmn_stat(PokemonName::Garchomp);
-
-    // println!("Pokemon Attack stat is {attack}!", attack = poke.attack);
-
-    // let garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
-    // println!("Pokemon display {}", garchomp);
-
-    // poke_str = "Bisharp"
 }
 
 fn make_pokemon_from_file() {
@@ -89,7 +67,6 @@ fn garchomp_fight_test() {
     println!("{}", bs.get_print_state());
 }
 
-
 fn battle_container_test() {
 
     println!("Battle processor startup");
@@ -118,12 +95,22 @@ fn battle_container_test() {
         sludge_bomb_move, 
         vec![BattlePosition::B1]);
 
+    let earthquake = &pokemon::moves::get_move(PokemonMoveName::Earthquake);
+    BattleState::queue_move(&mut bs.action_queue, 
+        BattlePosition::B1, 
+        earthquake, 
+        vec![BattlePosition::F1]);
+
     // make the root container
     let bc = BattleContainer::simple(bs, 
     PkmnRational::ONE());
     battle_processor.battle_ctns.push(bc);
 
+
+    println!("\nBegin processing\n---\n");
     // Simulate container
-    battle_processor.process_all_states_by_one();
+    battle_processor.process_all_states_by_one_turn(true);
+
+    println!("Processed the entire turn")
 
 }

@@ -7,7 +7,9 @@ use std::{collections::VecDeque};
 pub mod battle_processor;
 // use crate::batt
 
+use crate::battle::PokemonStatus::{BURNED, FROZEN, NONE, PARALYZED, POISONED, SLEEP, TOXIC};
 use crate::pokemon::moves::MoveEffect;
+use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
 use crate::pokemon::{self, Pokemon, PokemonAbility, PokemonName, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
@@ -15,7 +17,7 @@ use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{Pokemon
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
 
 #[allow(dead_code)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, )]
 pub enum PokemonStatus {
     NONE,
     BURNED,
@@ -24,6 +26,21 @@ pub enum PokemonStatus {
     SLEEP,
     POISONED,
     TOXIC
+}
+
+impl std::fmt::Display for PokemonStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+
+        match self {
+            NONE => write!(f, "None"),
+            BURNED => write!(f, "Burned"),
+            PARALYZED => write!(f, "Paralyze"),
+            FROZEN => write!(f, "Frozen"),
+            SLEEP => write!(f, "Sleep"),
+            POISONED => write!(f, "Poisoned"),
+            TOXIC => write!(f, "Toxic")
+        }
+    }
 }
 
 static LEVEL: i32 = 50;
@@ -187,6 +204,8 @@ impl core::fmt::Display for BattleAction<'_> {
                 write!(f, "BattleAction::Stat({})", act[0].stat_name),
             BattleAction::Damage(act) => 
                 write!(f, "BattleAction::Damage({})", act.damage_source),
+            BattleAction::Status(act) =>
+                write!(f, "BattleAction::Status({})", act),
             BattleAction::Faint(act) => 
                 write!(f, "BattleAction::Faint({:?})", act),
             _ => write!(f, "BattleAction<>")
@@ -273,6 +292,12 @@ pub struct StatusAction {
     pub accuracy: PkmnRational
 }
 
+impl std::fmt::Display for StatusAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return write!(f, "StatusAct: {} {:?} {}", 
+            self.status, self.targets, self.accuracy.str_pct())
+    }
+}
 
 /// Battle action with generic target/accuracy 
 pub struct BattleActionCtn<'battle> {
@@ -350,6 +375,7 @@ pub struct BattleState<'battle> {
     // NOTE: If speed/ability/etc order is hard to order, create a different queue
     pub action_queue: VecDeque<BattleAction<'battle>>,
     pub turn_num: i32,
+    pub action_num: i32,
 }
 
 impl<'battle> BattleState<'battle> {
@@ -368,7 +394,8 @@ impl<'battle> BattleState<'battle> {
             internal_state: "_".to_string(),
             // current_action: None,
             action_queue: VecDeque::new(),
-            turn_num: 0,
+            turn_num: 1,
+            action_num: 0
         }
     }
 
@@ -495,6 +522,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Mutate the battle state
+    #[deprecated(note="Modifies state directly")]
     fn perform_move(&mut self, move_action: &mut MoveAction) -> &Self {
         
         let source_act_pkmn = self.get_active_mut(move_action.source).expect("source must exist");
@@ -516,7 +544,7 @@ impl<'battle> BattleState<'battle> {
             let target_pkmn = self.get_active_mut(*target_position).expect("target must exist");
             
             let poke = &target_pkmn.pokemon;
-            println!("Start damage calc {} for target {poke}", move_action.pkm_move.name);
+            println!("*Start damage calc {} for target {poke}", move_action.pkm_move.name);
 
             // TODO: Calculate crit, including status and etc effects
             // let is_crit = false;
@@ -588,7 +616,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Perform stat modifier change for a single pokemon
-    #[deprecated(note="modifies the state directly")]
+    #[deprecated(note="use sim_stat & perform_stat_change instead")]
     fn perform_stat(&mut self, stat_action: StatAction) -> &Self {
 
         for target in stat_action.targets {
@@ -653,6 +681,7 @@ impl<'battle> BattleState<'battle> {
                 _ => panic!("Invalid number of targets {}", valid_targets.len())
             };
 
+            // No need to manual calc the NULL case anymore
             let mut result_bcs = vec![
                 BattleContainer::simple(state_clone, 
                 PkmnRational::ONE() - stat_action.pct_chance ^ valid_targets.len() as u32
@@ -666,15 +695,28 @@ impl<'battle> BattleState<'battle> {
 
             for bin_comb in 1..num_combs {
                 let mut int_clone = self.clone();
+                let mut msg = String::new();
                 for (idx,target_pos) in valid_targets.iter().enumerate() {
                     if (bin_comb >> idx) & 0b1 == 1 {
                         int_clone.perform_stat_change(*target_pos, &stat_action);
+                        let act_poke = int_clone.get_active(*target_pos).unwrap();
+                        let change_dir = if stat_action.change.direction() == 1 {"rose"} else {"fell"};
+                        let tmp_msg = format!("{}'s {} {change_dir} [{:?}]!", act_poke.pokemon, 
+                            stat_action.stat_name, 
+                            act_poke.get_active_stat_modf(stat_action.stat_name),
+                        );
+                        msg.push_str(&tmp_msg);
+                        msg.push('\n');
                     }
                 }
                 result_bcs.push(
                     BattleContainer::simple(int_clone, 
                     pct_container[bin_comb as usize])
                 );
+                
+                // Hacky method of getting this to the bc
+                let last = result_bcs.last_mut().unwrap();
+                last.message = msg;
             }
             
             return result_bcs
@@ -711,15 +753,24 @@ impl<'battle> BattleState<'battle> {
         // for each combination in the power_set, I need to edit the cloned battle state
         // and then add to queue if anything triggers
         for (bin_comb, rat) in prob_set.iter().enumerate() {
-            let prob = prob_set[bin_comb];
-            if prob == PkmnRational::ZERO() { continue; }
+            if prob_set[bin_comb] == PkmnRational::ZERO() { continue; }
+
+            let mut status_msg = String::new();
             let mut clone_state = self.clone();
-            for target in valid_targets {
+            // TODO: Fix this generation
+            for (idx,target) in valid_targets.iter().enumerate() {
                 // perform status change on clone
-                clone_state.perform_status_change(*target, &status_action);
+                if (bin_comb >> idx) & 0b1 == 0 {
+                    status_msg.push_str("status chance fail");
+                    continue
+                }
+                clone_state.exec_status_change(*target, &status_action);
+                status_msg.push_str(&format!("{} was statused [{}]", 
+                    clone_state.get_active(*target).unwrap(), status_action.status));
             }
             result_vecs.push(
                 BattleContainer::simple(clone_state, *rat));
+            result_vecs.last_mut().unwrap().message = status_msg;
         }
 
         result_vecs
@@ -728,6 +779,10 @@ impl<'battle> BattleState<'battle> {
     // Simulate a move hit and create states from this
     fn sim_move(&self, move_action: &MoveAction) -> Vec<BattleContainer<'battle>> {
         let source_act_pkmn = self.get_active(move_action.source).expect("source must exist");
+
+        let move_msg = format!("{} used {}!",
+                        self.get_active(move_action.source).unwrap(), 
+                        move_action.pkm_move.name);
 
         if move_action.pkm_move.is_attack() {
             // TODO: If attack, do base_power calculations
@@ -892,13 +947,25 @@ impl<'battle> BattleState<'battle> {
         for (bin_comb, rat) in prob_set.iter().enumerate() {
             if *rat == PkmnRational::ZERO() {continue;}
             let mut cloned_state = self.clone();
+            let mut bc_msg:String = move_msg.clone();
             for (idx,target_pos) in move_targets.iter().enumerate() {
                     if (bin_comb >> idx) & 0b1 == 1 {
                         add_to_queue(&mut cloned_state, &result_queue[idx]);
                         // int_clone.perform_stat_change(*target_pos, &stat_action);
                     }
+                    // if missed, add message here
+                    else {
+                        let missed_pkmn_opt = cloned_state.get_active(*target_pos.1);
+                        if let Some(missed_pkmn) = missed_pkmn_opt {
+                            bc_msg.push_str(
+                                &format!("\nAttack missed on {}", missed_pkmn).to_string()
+                            );
+                        }
+                    }
                 }
-            result_bcs.push(BattleContainer::simple(cloned_state, *rat))
+            let mut new_bc = BattleContainer::simple(cloned_state, *rat);
+            new_bc.message = bc_msg;
+            result_bcs.push(new_bc)
         }
         // Now return all the new battle_states that occur
         result_bcs
@@ -940,6 +1007,7 @@ impl<'battle> BattleState<'battle> {
         *stat_ref += stat_action.change;
     }
 
+    #[deprecated(note="Modifies state directly")]
     fn perform_status_change(&mut self, target_pos:BattlePosition, status_action: &StatusAction) {
         let target_poke = self.get_active_mut(target_pos);
         let target_act_pkmn = target_poke.expect("Must be non-null");
@@ -947,8 +1015,40 @@ impl<'battle> BattleState<'battle> {
         target_act_pkmn.status = status_action.status;
     }
 
+    fn exec_status_change(&mut self, 
+        position:BattlePosition, 
+        // target_act_poke:&mut ActivePokemon,
+        status_action: &StatusAction) {
+        
+        let target_act_poke:&mut ActivePokemon = self.get_active_mut(position).unwrap();
+
+        let type_prevention = |status:PokemonStatus, has_type:PokemonType| -> bool {
+            return status_action.status == status &&
+                target_act_poke.pokemon.has_type(has_type)
+        };
+
+        use PokemonStatus::*;
+        use PokemonType::*;
+        // Type prevention
+        if type_prevention(BURNED, FIRE) ||
+            type_prevention(FROZEN, ICE) ||
+            type_prevention(POISONED, POISON) ||
+            type_prevention(TOXIC, POISON) ||
+            type_prevention(PARALYZED, ELECTRIC) {
+                return
+            }
+
+        // Check ability prevention
+        // Check field & etc prevention
+
+        if target_act_poke.status != PokemonStatus::NONE {
+            target_act_poke.status = status_action.status
+        }
+    }
+
     /// TODO: Damage actions, might fold this into perform move
     /// But also needs to handle non-move actions
+    #[deprecated(note="Modifies state directly")]
     fn perform_damage(&mut self, dmg_effect:DamageEffect) {
 
         // TODO: Check if any abilities block/mitigate the damage
@@ -970,7 +1070,46 @@ impl<'battle> BattleState<'battle> {
                 BattleAction::Faint(dmg_effect.target)
             );
         }
+    }
 
+    fn sim_damage(&self, dmg_effect:DamageEffect) -> Vec<BattleContainer<'battle>> {
+
+        // TODO: Check if any abilities block/mitigate the damage
+        // NOTE: Might be bad to check here, lets assume damage is always accurate
+
+        let mut cloned_state = self.clone();
+
+        let target_pkmn = 
+            cloned_state.get_active_mut(dmg_effect.target).unwrap();
+
+        
+        let curr_hp = target_pkmn.current_hp;
+        // TODO: Any pre-damage takes (items, abilities, endure)
+        let dmg_done = dmg_effect.calc_damage.min(target_pkmn.current_hp);
+
+        target_pkmn.current_hp -= dmg_done;
+        
+        let fainted = target_pkmn.current_hp == 0;
+        let dmg_msg = format!("{target_pkmn} took {dmg_done} damage!");
+        // TODO: Think about how to calc this easily into ratio
+        // maybe compare ratio to threshold rational
+        let health_ratio =  target_pkmn.current_hp / target_pkmn.get_active_stat(HEALTH);
+        
+        // If HP is 0, faint and perform fainting actions and ignore other effects
+        if fainted {
+            cloned_state.action_queue.push_front(
+                BattleAction::Faint(dmg_effect.target)
+            );
+        }
+        // Check pokemon/field for any faint effects
+
+        // Trigger any health effects (abilities, berries, etc)
+        // Trigger if recoil/recovery if move permits (or do within move)
+        // TODO: currently create 1 BC, if ablities/items have % chance generate
+        let mut bc = BattleContainer::simple(cloned_state, PkmnRational::ONE());
+        bc.message = dmg_msg;
+
+        vec![bc]
     }
 
     pub fn perform_turn(&mut self) {
@@ -1017,26 +1156,22 @@ impl<'battle> BattleState<'battle> {
 
     /// Create a list of battle states created from 1 action on the action queue
     #[allow(unused_mut)] // some actions need to be modified
-    pub fn sim_action(&mut self) -> Vec<BattleContainer<'battle>> {
+    pub fn sim_action(&mut self, mut action:BattleAction) -> Vec<BattleContainer<'battle>> {
         // TODO: sort action queue
-        let action = match self.action_queue.pop_front() {
-                Some(action) => action,
-                None => return vec![]
-            };
-
 
         match action {
-            BattleAction::Move(mut move_action) => {
+            BattleAction::Move(move_action) => {
                 if !self.can_perform_move(&move_action.pkm_move, &move_action) {
                     // TODO: set move as failed
+                    // Return bc with failed state
                     return vec![];
                 }
                 // TODO: Check abilities & etc with field to edit move if needed
-                println!("{} used {}!",
-                        self.get_active(move_action.source).unwrap(), 
-                        move_action.pkm_move.name);
+                // println!("{} used {}!",
+                //         self.get_active(move_action.source).unwrap(), 
+                //         move_action.pkm_move.name);
                 
-                return self.sim_move(&mut move_action)
+                return self.sim_move(&move_action)
             },
             BattleAction::Stat(mut stat_actions) => {
                 for stat_action in stat_actions {
@@ -1047,7 +1182,9 @@ impl<'battle> BattleState<'battle> {
                 return self.sim_status(status_action)
             }
             BattleAction::Damage(mut dmg_action) => {
-
+                // return self.perform_damage(dmg_action);
+                return self.sim_damage(dmg_action);
+                // TODO: implement this
             }
             _ => {
                     println!("Not yet implemented {action}")
@@ -1162,9 +1299,14 @@ impl<'battle> BattleState<'battle> {
 
 mod test {
 
+use std::ops::Deref;
+
+use crate::battle::PokemonStatus::BURNED;
 // use super::*;
 use crate::battle::*;
-use crate::pokemon::PokemonName::{Garchomp, Kingambit};
+use crate::pokemon::PokemonName::{Charizard, Garchomp, Kingambit, Talonflame, Venusaur};
+use crate::pokemon::moves::PokemonMoveName::Heat_Wave;
+use crate::pokemon::poke_stat::PokemonStatModifier::MINUS_5;
 use crate::pokemon::poke_stat::PokemonStatName::*;
 use crate::pokemon::*;
 use crate::pokemon::moves::{get_move, PokemonMoveName};
@@ -1190,6 +1332,30 @@ use crate::pokemon::moves::{get_move, PokemonMoveName};
 
         let min_dmg = mult_and_round(f2_dmg, 0.85);
         assert_eq!(min_dmg, 35); // min damage roll is 35
+    }
+
+    #[test]
+    fn test_dmg2_calc() {
+        let char_base_stat = &get_pkmn(Charizard).base_stats;
+        let venu_base_stat = &get_pkmn(Venusaur).base_stats;
+        let pkmn_move = get_move(PokemonMoveName::Heat_Wave);
+
+        let atk_stat = get_full_stat(char_base_stat, None, 
+            PokemonStatName::SPECIAL_ATTACK);
+        let def_stat = get_full_stat(venu_base_stat, None, 
+            PokemonStatName::SPECIAL_DEFENSE);
+        let dmg = pkmn_damage_formula(pkmn_move.power, atk_stat, def_stat);
+
+        // stab bonus
+        let f_dmg = mult_and_round(dmg, 1.5);
+        // type_multiplier 
+        let f2_dmg = mult_and_round(f_dmg, 2.0);
+        assert_eq!(f2_dmg, 138); // max damage roll
+
+        // TODO: 0.85 is not the accurate way to calc?
+        // Need a builder that will return 1 number in a consistent way
+        let min_dmg = mult_and_round(f2_dmg, 0.85);
+        assert_eq!(min_dmg, 116); // min damage roll is 35
     }
 
     #[test]
@@ -1220,6 +1386,106 @@ use crate::pokemon::moves::{get_move, PokemonMoveName};
         assert!(root_bc.battle_ctns[1].battle_state.is_some());
         assert_eq!(root_bc.battle_ctns[1].battle_state
             .as_ref().unwrap().action_queue.len(), 1);
+
+        
+        // get the miss case, pull out of vector
+        let miss_bc = root_bc.battle_ctns.get_mut(0).unwrap();
+        let miss_bs = miss_bc.battle_state.as_mut().unwrap();
+        miss_bs.f_poke2 = 
+            Some(ActivePokemon::quick(PokemonName::Charizard));
+        
+        miss_bs.b_poke2 = 
+            Some(ActivePokemon::quick(PokemonName::Rotom_Wash));
+
+        let heat_wave = get_move(Heat_Wave);
+        BattleState::queue_move(&mut miss_bs.action_queue, 
+            BattlePosition::F2, &heat_wave, 
+        vec![BattlePosition::B1, BattlePosition::B2]);
+
+        // Simulate heat wave on 2 targets
+        miss_bc.sim_next_action();
+
+        // there should be 4 ctns, nothing, b1 hit, b2 hit, b1 & b2 hit
+        assert_eq!(miss_bc.battle_ctns.len(), 4);
+        // TODO: Complete this test on accuracy and states and etc
+
+
+    }
+
+    fn dummy_bc<'battle> () -> BattleContainer<'battle> {
+        let ttar_pkmn = ActivePokemon::quick(PokemonName::Tyranitar);
+        let ven_pkmn = ActivePokemon::quick(PokemonName::Venusaur);
+
+        let mut bs = BattleState::simple(ttar_pkmn, ven_pkmn);
+        // let hydro_pump = get_move(PokemonMoveName::Hydro_Pump);
+        // BattleState::queue_move(&mut bs.action_queue, 
+        //     BattlePosition::F1, &hydro_pump, 
+        //     vec![BattlePosition::B1]);
+
+        let mut root_bc:BattleContainer<'battle> = BattleContainer::simple(bs, PkmnRational::ONE());
+        root_bc
+    }
+
+    #[test]
+    fn test_status_effect_sim () {
+
+        let mut root_bc = dummy_bc();
+        // {
+        let bs = root_bc.battle_state.as_mut().unwrap();
+
+        let status_action = StatusAction {
+            targets: vec![BattlePosition::F1],
+            status: PokemonStatus::BURNED,
+            accuracy: PkmnRational::ONE()
+        };
+        bs.action_queue.push_back(BattleAction::Status(status_action));
+        // }
+
+        assert_eq!(bs.action_queue.len(), 1);
+
+        root_bc.sim_next_action();
+
+        assert_eq!(root_bc.battle_ctns.len(), 0);
+        // Should be processed, get new state
+        let new_bs = root_bc.battle_state.as_ref().unwrap();
+        
+        assert_eq!(new_bs.action_queue.len(), 0);
+        // pokemon F1 should be burnt
+        assert_eq!(new_bs.f_poke1.as_ref().unwrap().status, PokemonStatus::BURNED);
+        
+    }
+
+    #[test]
+    fn test_stat_modifier_sim () {
+
+        let mut root_bc = dummy_bc();
+        // {
+        let bs = root_bc.battle_state.as_mut().unwrap();
+
+        let stat_action = StatAction {
+            targets: vec![BattlePosition::F1],
+            stat_name: ATTACK,
+            change: MINUS_5,
+            pct_chance: PkmnRational::ONE()
+        };
+        bs.action_queue.push_back(BattleAction::Stat(vec![stat_action]));
+        // }
+        
+        // 1 action to process
+        assert_eq!(bs.action_queue.len(), 1);
+
+        root_bc.sim_next_action();
+
+        // Should be processed, get new state
+        let mut new_bs = root_bc.battle_state.as_mut().unwrap();
+        
+        assert_eq!(root_bc.battle_ctns.len(), 0);        
+        assert_eq!(new_bs.action_queue.len(), 0);
+        // pokemon F1 should be -5 special attack
+        // have to get mut ref since i only have mut stat function
+        assert_eq!(new_bs.f_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(), 
+            PokemonStatModifier::MINUS_5);
+        
     }
 
 

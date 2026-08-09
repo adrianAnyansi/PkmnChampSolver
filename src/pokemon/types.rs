@@ -283,3 +283,30 @@ pub fn get_type_multipler(type_atk:PokemonType, type_def:PokemonType) -> f64 {
     let mult = TYPE_CHART_ARRAY[type_hash_func(type_atk, type_def)];
     mult
 }
+
+#[cfg(test)]
+mod tests {
+
+    use crate::pokemon::types::*;
+    
+    #[test]
+    fn test_type_multiplier () {
+        
+        let type_a = PokemonType::BUG;
+        let type_b = PokemonType::FLYING;
+        
+        let type_result = get_type_multipler(type_a, type_b);
+        assert_eq!(type_result, 0.5);
+
+        assert_eq!(
+            get_type_multipler(PokemonType::GROUND, 
+                PokemonType::ELECTRIC),
+            2.0
+        );
+        assert_eq!(
+            get_type_multipler(PokemonType::GROUND, 
+                PokemonType::FLYING),
+            0.0
+        )
+    }
+}

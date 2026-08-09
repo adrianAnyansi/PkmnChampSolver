@@ -31,7 +31,7 @@ impl PkmnRational {
         return PkmnRational { numer: 0, demon: 1 }
     }
 
-    pub fn float(self) -> f64 {
+    pub fn float(&self) -> f64 {
         return self.numer as f64 / self.demon as f64
     }
 
@@ -42,9 +42,14 @@ impl PkmnRational {
         }
     }
 
-    // Return fraction out of 100
+    /// Return fraction out of 100
     pub fn pct(numer:i32) -> PkmnRational {
         return PkmnRational { numer, demon: 100 }
+    }
+
+    /// Return string output of __.__%
+    pub fn str_pct(&self) -> String {
+        format!("{:02.2}%", self.float())
     }
 
     /// Hacky convert to fraction
@@ -93,6 +98,23 @@ impl PkmnRational {
         // }
     }
 
+    /// Choose Index from Rational summing to 1
+    pub fn PickFrom(probs:Vec<PkmnRational>) -> usize {
+        let rand_rat = PkmnRational::new(
+                get_random_int(1, 10_000) as i32,
+                 10_000);
+
+        let mut curr_val = PkmnRational::ZERO();
+        for (idx, prob) in probs.iter().enumerate() {
+            // TODO: Fix comparison operator
+            if rand_rat.float() < (*prob - curr_val).float() {
+                return idx;
+            }
+            curr_val += *prob
+        }
+        // This should never reach here honestly, check
+        probs.len()-1
+    }
 }
 
 impl core::fmt::Display for PkmnRational {
@@ -250,9 +272,10 @@ pub fn getRNGThread() -> ThreadRng {
 pub fn get_random_int(low:u32, high:u32) -> u32 {
     let rng_float = rand::random::<f64>(); // get between [0, 1)
     
-    let norm_seed = (rng_float / ((high-low) as f64) ) as u32 + low;
+    let norm_seed = (rng_float * ((high-low) as f64) ) as u32 + low;
     return norm_seed
 }
+
 
 
 #[cfg(test)]

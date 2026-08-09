@@ -21,6 +21,14 @@ pub enum PokemonName {
     Kingambit,
     Tyranitar,
     Venusaur,
+    Sinistcha,
+    Incineroar,
+    Floette_Eternal,
+    Talonflame,
+    Charizard,
+    Steelix,
+    Sneasler,
+    Rotom_Wash
 }
 
 
@@ -34,6 +42,25 @@ pub enum PokemonAbility {
     Unnerve,
     Supreme_Overlord,
     Sand_Veil,
+    Intimidate,
+    Blaze,
+    Rock_Head,
+    Sturdy,
+    Sheer_Force,
+    Solar_Power,
+    Pressure,
+    Unburden,
+    Poison_Touch,
+    Chlorophyll,
+    Overgrow,
+    Thick_Fat,
+    Levitate,
+    Flower_Veil,
+    Symbiosis,
+    Hospitality,
+    Heatproof,
+    Flame_Body,
+    Gale_Wings,
     Nothing
 }
 

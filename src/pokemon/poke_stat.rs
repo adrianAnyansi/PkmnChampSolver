@@ -91,6 +91,7 @@ impl std::ops::Add for PokemonStats {
     }
 }
 
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PokemonStatName {
     HEALTH,
