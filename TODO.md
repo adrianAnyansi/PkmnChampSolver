@@ -8,44 +8,35 @@ Then simulate the whole match (without universes*)
 
 Moves/Pokes are implemented
 Next is the Container/processor
-Then verify the damage calculation
+damage calc is still invalid on lower end*
+    - might need a better way to do this
 Then speed / priority calculations
 Then implementing teams and draft selection stuff?
 
 ## Thoughts
 
 Working on a generic N targets for an event
-Might delay until Im better at Rust
-
----
-
-
----
-
-I have the BC message* and understanding the state stuff
-So battle processor exists to hold multiple universes with different origins
-also to hold hashes
-i.e battle container can simulate 1 battle -> end but not multiple origins despite overlaps being possible. 
-BC collapse could be on BC but battle processor wants the collapse, I never want to collapse when processing the BC, I want the flatten (to merge similar hashes) but battle_processor is the one that should also do this*
-
-Issue is that I have a root_bc because sim_next_action has to contain itself- which defeats the purpose of processor root? idk.
-Yeah collapse should be on the root, and a root means its % is ONE. Make that a property and its easier to reason about, not to mention the logic of collapse requires a 0..1 range, ah its the mutable/immutable problem again.
-
-I want collapse to mutate the root so I don't need to change the vector when collapsing, so its a different function.
- 
+    Message made this more difficult, I think it should go into the battle state as a temp variable
 
  ---
- Move message
- 1. Poke used N!
-    On cancel, say why target was cancelled
-2. On damage, say N took N damage
-    On cancel/edit, change the message
-    
+The best way to impl moves/etc is to do tests, but I need better helpers for making battles/pokemon rn
+
+Want to work on bitflags to compare move things quickly
+Need to implement Switching and Fainting so I can work on turn mechanics and end of battle
+Speed order at some point of course
 
 ## Today
 
-Add messages to each action use for debugging
-Create something that loops until all actions are complete
+In order to make Protect, heres the plan
+1. Set protect flag on user
+2. Use move_history to keep track of moves (good for last resort, multiple moves & etc)
+3. Move fails if Pokemon is last (not used)
+
+Also need to think about 2nd effects on block, like Spiky Shield or Baneful. So the hit is blocked but it still counts as an effect trigger
+
+Need easier pokemon & move creation, going to make a central library to contain all
+Then more testing with spread moves
+Then I'll implment abilities
 
 Create something that checks all pokemon and selects a random move
     - Also need to add additional actions (mega, switching)

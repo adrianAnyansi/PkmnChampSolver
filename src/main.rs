@@ -14,12 +14,9 @@ use crate::pokemon::moves::PokemonMoveName::{self};
 fn main() {
     println!("Pokemon Solver starting up!");
 
-    // analyze();
     // garchomp_fight_test();
     // make_pokemon_from_file();
-
     battle_container_test();
-
 
     println!("Pokemon Solver complete!");
 }
@@ -40,10 +37,10 @@ fn garchomp_fight_test() {
     // garchomp.learnset.push(draco_move);
     
     bs.f_poke1 = Some(ActivePokemon::new(garchomp, 
-        pokemon::PokemonAbility::Sand_Force, 
+        pokemon::PokemonAbilityName::Sand_Force, 
         pokemon::poke_stat::PokemonNature::Brave, None));
     bs.b_poke1 = Some(ActivePokemon::new(bis, 
-        pokemon::PokemonAbility::Sand_Force, 
+        pokemon::PokemonAbilityName::Sand_Force, 
         pokemon::poke_stat::PokemonNature::Brave, None));
 
     println!("Printing the current battle state:");
@@ -78,14 +75,18 @@ fn battle_container_test() {
 
     bs.f_poke1 = Some(
         ActivePokemon::new(venusaur, 
-            pokemon::PokemonAbility::Nothing, 
+            pokemon::PokemonAbilityName::Nothing, 
             pokemon::poke_stat::PokemonNature::Brave, 
             None)
     );
+    bs.f_poke2 = Some(
+        ActivePokemon::quick(PokemonName::Kingambit)
+    );
     bs.b_poke1 = Some(ActivePokemon::new(garchomp, 
-        pokemon::PokemonAbility::Nothing, 
+        pokemon::PokemonAbilityName::Nothing, 
         pokemon::poke_stat::PokemonNature::Brave, 
         None));
+
 
     println!("Created {}, {} pokemon", venusaur, garchomp);
     let sludge_bomb_move = &pokemon::moves::get_move(PokemonMoveName::Sludge_Bomb);
@@ -99,7 +100,13 @@ fn battle_container_test() {
     BattleState::queue_move(&mut bs.action_queue, 
         BattlePosition::B1, 
         earthquake, 
-        vec![BattlePosition::F1]);
+        vec![BattlePosition::F1, BattlePosition::F2]);
+
+    let parting_shot = &pokemon::moves::get_move(PokemonMoveName::Parting_Shot);
+    BattleState::queue_move(&mut bs.action_queue, 
+        BattlePosition::F2, 
+        parting_shot, 
+        vec![BattlePosition::B1, BattlePosition::B2]);
 
     // make the root container
     let bc = BattleContainer::simple(bs, 

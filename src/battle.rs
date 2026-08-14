@@ -2,17 +2,20 @@
 #![allow(dead_code)]
 
 use std::clone;
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::{collections::VecDeque};
 
 pub mod battle_processor;
 // use crate::batt
 
 use crate::battle::PokemonStatus::{BURNED, FROZEN, NONE, PARALYZED, POISONED, SLEEP, TOXIC};
-use crate::pokemon::moves::MoveEffect;
+use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, PROTECT, PROTECT_ACC, PROTECT_COUNTER};
+use crate::pokemon::moves::{MoveEffect, PokemonMoveFlag, PokemonMoveName, get_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
-use crate::pokemon::{self, Pokemon, PokemonAbility, PokemonName, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
+use crate::pokemon::{self, Pokemon, PokemonAbilityName, PokemonName, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
 
@@ -63,12 +66,18 @@ fn pkmn_damage_formula(power:i32,
 pub struct ActivePokemon {
     pub pokemon: &'static Pokemon,
     pub trained_stats: PokemonStats,
-    pub ability: PokemonAbility,
+    pub ability: PokemonAbilityName,
     pub nature: PokemonNature,
     pub status: PokemonStatus,
     pub stat_modifier: [PokemonStatModifier; 5], // temp exclude evasion & acc
     // exclude crit
     current_hp: i32,
+    /// Keep track of conditions in battle
+    pub in_battle_flags: HashMap<String, String>,
+    // pub move_history: Vec<PokemonMoveName>,
+    pub turns_active: u8,
+    pub protect_count: u8,
+    pub last_move_used: Option<PokemonMoveName>
 }
 
 // TODO: Currently I'm moving the struct instead of referencing
@@ -77,7 +86,7 @@ pub struct ActivePokemon {
 // So I'm just going to leave this as a copy for now and remember I'm duplicating
 impl ActivePokemon {
     pub fn new (pokemon:&'static Pokemon, 
-        ability:PokemonAbility, 
+        ability:PokemonAbilityName, 
         nature:PokemonNature,
         trained_stats: Option<PokemonStats>) -> Self {
 
@@ -92,6 +101,11 @@ impl ActivePokemon {
                 nature,
                 trained_stats: trained_stat,
                 pokemon: pokemon, // this is moved here
+                // move_history: Vec::new(),
+                turns_active: 0, // first turn effect counter
+                protect_count: 0,
+                last_move_used: None,
+                in_battle_flags: HashMap::new() // Keep track of various flags
             }
     }
 
@@ -99,7 +113,7 @@ impl ActivePokemon {
         let pokemon = pokemon::get_pkmn(poke_name);
         ActivePokemon::new(
             pokemon,
-            PokemonAbility::Nothing,
+            PokemonAbilityName::Nothing,
             PokemonNature::Quirky,
             None
         )
@@ -192,7 +206,8 @@ pub enum BattleAction<'battle> {
     AbilityAction, // Ability 
     /// Pokemon took damage from any source
     Damage(DamageEffect),
-    Faint(BattlePosition)
+    Faint(BattlePosition),
+    Protect(PokemonMoveName, BattlePosition)
 }
 
 impl core::fmt::Display for BattleAction<'_> {
@@ -343,7 +358,7 @@ pub enum BattleEffect {
 
 pub enum DamageSource {
     Move(PokemonMove),
-    Ability(PokemonAbility),
+    Ability(PokemonAbilityName),
     Status(PokemonStatus)
 }
 
@@ -376,6 +391,7 @@ pub struct BattleState<'battle> {
     pub action_queue: VecDeque<BattleAction<'battle>>,
     pub turn_num: i32,
     pub action_num: i32,
+    pub action_strs: Vec<String>
 }
 
 impl<'battle> BattleState<'battle> {
@@ -395,7 +411,9 @@ impl<'battle> BattleState<'battle> {
             // current_action: None,
             action_queue: VecDeque::new(),
             turn_num: 1,
-            action_num: 0
+            action_num: 0,
+            // Keep track of messages from actions/debug this frame
+            action_strs: Vec::new()
         }
     }
 
@@ -650,77 +668,110 @@ impl<'battle> BattleState<'battle> {
     /// Simulate a stat change
     fn sim_stat(&self, stat_action: StatAction) -> Vec<BattleContainer<'battle>> {
 
-        // duplicate the battle state
-        let mut state_clone = self.clone();
-
-        // For multiple targets, do I nest results or flatten?
-        // flatten, also cache the independent events probability
-
+        let change_dir = if stat_action.change.direction() == 1 {"rose"} else {"fell"};
+        
         // Get all targets that are hit
         let valid_targets = self.can_perform_stat(&stat_action);
+        let prob_set = gen_power_set(vec![
+            stat_action.pct_chance; valid_targets.len()]);
+        let mut result_vecs:Vec<BattleContainer> = vec![];
+
+        for (bin_comb, rat) in prob_set.iter().enumerate() {
+            if prob_set[bin_comb] == PkmnRational::ZERO() { continue; }
+
+            let mut clone_state = self.clone();
+            let mut stat_msg = String::new();
+
+            for (idx, target_pos) in valid_targets.iter().enumerate() {
+                if (bin_comb >> idx) & 0b1 == 0 {
+                    let target_poke = clone_state.get_active(*target_pos).unwrap();
+                    stat_msg.push_str(&format!("{} avoided the stat change!", target_poke));
+                    continue
+                }
+                clone_state.perform_stat_change(*target_pos, &stat_action);
+                let target_poke = clone_state.get_active(*target_pos).unwrap();
+                stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.pokemon, 
+                    stat_action.stat_name, 
+                    target_poke.get_active_stat_modf(stat_action.stat_name),
+                ));
+            }
+            result_vecs.push(
+                BattleContainer::simple(clone_state, *rat)
+                .add_msg(stat_msg)
+            );
+        }
+
+        result_vecs
         
         // Build states with permutation of each if not 100%
-        if stat_action.pct_chance == PkmnRational::ONE() {
-            // 1 state with every change
-            for target_pos in valid_targets {
-                state_clone.perform_stat_change(target_pos, &stat_action);
-            }
-            return vec![BattleContainer::simple(state_clone, PkmnRational::ONE())]
-        } else {
-            const POWER_SET:[u32; 2] = [0b1, 0b11];
-            let inverse_chance = PkmnRational::ONE() - stat_action.pct_chance;
-            let pct_container = 
-            match valid_targets.len() {
-                1 => vec![inverse_chance, stat_action.pct_chance],
-                2 => vec![
-                    inverse_chance ^ 2,
-                    (inverse_chance ^ 1) * stat_action.pct_chance ^ 1,
-                    (inverse_chance ^ 1) * stat_action.pct_chance ^ 1,
-                    stat_action.pct_chance ^ 2,
-                ],
-                _ => panic!("Invalid number of targets {}", valid_targets.len())
-            };
+        // if stat_action.pct_chance == PkmnRational::ONE() {
+        //     // 1 state with every change
+        //     for target_pos in valid_targets {
+        //         state_clone.perform_stat_change(target_pos, &stat_action);
+        //     }
+        //     let act_poke = state_clone.get_active(*target_pos).unwrap();
+        //     let change_dir = if stat_action.change.direction() == 1 {"rose"} else {"fell"};
+        //     let tmp_msg = format!("{}'s {} {change_dir} [{:?}]!", act_poke.pokemon, 
+        //                     stat_action.stat_name, 
+        //                     act_poke.get_active_stat_modf(stat_action.stat_name),
+        //                 );
+        //     return vec![*BattleContainer::simple(state_clone, 
+        //         PkmnRational::ONE()).add_msg(&tmp_msg)]
+        // } else {
+        //     const POWER_SET:[u32; 2] = [0b1, 0b11];
+        //     let inverse_chance = PkmnRational::ONE() - stat_action.pct_chance;
+        //     let pct_container = 
+        //     match valid_targets.len() {
+        //         1 => vec![inverse_chance, stat_action.pct_chance],
+        //         2 => vec![
+        //             inverse_chance ^ 2,
+        //             (inverse_chance ^ 1) * stat_action.pct_chance ^ 1,
+        //             (inverse_chance ^ 1) * stat_action.pct_chance ^ 1,
+        //             stat_action.pct_chance ^ 2,
+        //         ],
+        //         _ => panic!("Invalid number of targets {}", valid_targets.len())
+        //     };
 
-            // No need to manual calc the NULL case anymore
-            let mut result_bcs = vec![
-                BattleContainer::simple(state_clone, 
-                PkmnRational::ONE() - stat_action.pct_chance ^ valid_targets.len() as u32
-            )];
-            let num_combs = POWER_SET[valid_targets.len()];
+        //     // No need to manual calc the NULL case anymore
+        //     let mut result_bcs = vec![
+        //         BattleContainer::simple(state_clone, 
+        //         PkmnRational::ONE() - stat_action.pct_chance ^ valid_targets.len() as u32
+        //     )];
+        //     let num_combs = POWER_SET[valid_targets.len()];
 
-            let fn_stat_change = 
-            |state: &mut BattleState<'battle>, target_pos:&BattlePosition| {
-                state.perform_stat_change(*target_pos, &stat_action);
-            };
+        //     let fn_stat_change = 
+        //     |state: &mut BattleState<'battle>, target_pos:&BattlePosition| {
+        //         state.perform_stat_change(*target_pos, &stat_action);
+        //     };
 
-            for bin_comb in 1..num_combs {
-                let mut int_clone = self.clone();
-                let mut msg = String::new();
-                for (idx,target_pos) in valid_targets.iter().enumerate() {
-                    if (bin_comb >> idx) & 0b1 == 1 {
-                        int_clone.perform_stat_change(*target_pos, &stat_action);
-                        let act_poke = int_clone.get_active(*target_pos).unwrap();
-                        let change_dir = if stat_action.change.direction() == 1 {"rose"} else {"fell"};
-                        let tmp_msg = format!("{}'s {} {change_dir} [{:?}]!", act_poke.pokemon, 
-                            stat_action.stat_name, 
-                            act_poke.get_active_stat_modf(stat_action.stat_name),
-                        );
-                        msg.push_str(&tmp_msg);
-                        msg.push('\n');
-                    }
-                }
-                result_bcs.push(
-                    BattleContainer::simple(int_clone, 
-                    pct_container[bin_comb as usize])
-                );
+        //     for bin_comb in 1..num_combs {
+        //         let mut int_clone = self.clone();
+        //         let mut msg = String::new();
+        //         for (idx,target_pos) in valid_targets.iter().enumerate() {
+        //             if (bin_comb >> idx) & 0b1 == 1 {
+        //                 int_clone.perform_stat_change(*target_pos, &stat_action);
+        //                 let act_poke = int_clone.get_active(*target_pos).unwrap();
+        //                 let change_dir = if stat_action.change.direction() == 1 {"rose"} else {"fell"};
+        //                 let tmp_msg = format!("{}'s {} {change_dir} [{:?}]!", act_poke.pokemon, 
+        //                     stat_action.stat_name, 
+        //                     act_poke.get_active_stat_modf(stat_action.stat_name),
+        //                 );
+        //                 msg.push_str(&tmp_msg);
+        //                 msg.push('\n');
+        //             }
+        //         }
+        //         result_bcs.push(
+        //             BattleContainer::simple(int_clone, 
+        //             pct_container[bin_comb as usize])
+        //         );
                 
-                // Hacky method of getting this to the bc
-                let last = result_bcs.last_mut().unwrap();
-                last.message = msg;
-            }
+        //         // Hacky method of getting this to the bc
+        //         let last = result_bcs.last_mut().unwrap();
+        //         last.message = msg;
+        //     }
             
-            return result_bcs
-        }
+        //     return result_bcs
+        // }
 
         // TODO: Log stat change flag on the pokemon
             // if (stat_changed) {
@@ -757,7 +808,6 @@ impl<'battle> BattleState<'battle> {
 
             let mut status_msg = String::new();
             let mut clone_state = self.clone();
-            // TODO: Fix this generation
             for (idx,target) in valid_targets.iter().enumerate() {
                 // perform status change on clone
                 if (bin_comb >> idx) & 0b1 == 0 {
@@ -783,25 +833,8 @@ impl<'battle> BattleState<'battle> {
         let move_msg = format!("{} used {}!",
                         self.get_active(move_action.source).unwrap(), 
                         move_action.pkm_move.name);
-
-        if move_action.pkm_move.is_attack() {
-            // TODO: If attack, do base_power calculations
-        }
-
-        let base_power = move_action.pkm_move.power;
-        // TODO: Special power calculations if needed
-        let move_type = move_action.pkm_move.r#type;
-
-        let atk_stat = match move_action.pkm_move.category {
-            Physical => source_act_pkmn.get_active_stat(PokemonStatName::ATTACK),
-            Special => source_act_pkmn.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
-            _ => 1
-        };
-        let is_stab = [Physical, Special].contains(&move_action.pkm_move.category)
-            && source_act_pkmn.pokemon.has_type(move_action.pkm_move.r#type);
         
-
-        // TODO: Move this to function call
+        // TODO: Do valid target function check
         let move_targets:Vec<(&ActivePokemon, &BattlePosition)> = move_action.targets.iter().filter_map(
             |position| {
                 let poke = self.get_active(*position);
@@ -813,8 +846,7 @@ impl<'battle> BattleState<'battle> {
             }
         )
         .collect();
-        let num_targets = move_targets.len();
-        // let mut result_bcs:Vec<BattleContainer> = vec![];
+        let num_valid_targets = move_targets.len();
         let mut result_queue:Vec<Vec<BattleAction>> = vec![];
 
         // Check valid targets on field and calc hit
@@ -822,65 +854,33 @@ impl<'battle> BattleState<'battle> {
             
             // Contains resulting actions from move hit
             let mut result_act_vec: Vec<BattleAction> = vec![];
-            let base_poke = &target_act_pkmn.pokemon;
-            println!("Start damage calc for target {base_poke}");
+            let def_poke = &target_act_pkmn.pokemon;
 
             // TODO: Calculate crit, including status and etc effects
 
-            let def_stat = match &move_action.pkm_move.category {
-                Physical => target_act_pkmn.get_active_stat(PokemonStatName::DEFENSE),
-                Special => target_act_pkmn.get_active_stat(PokemonStatName::SPECIAL_DEFENSE),
-                _ => 1
-            };
-            // Check defense overrides
+            if move_action.pkm_move.is_attack() {
+                println!("INT[{}/{}] Start damage calc for target {def_poke}",
+                    self.turn_num, self.action_num);
+                let move_damage = BattleState::calc_move_damage(move_action, 
+                    num_valid_targets, source_act_pkmn, target_act_pkmn);
+
+                let bat_pos = **target_pos;
+                // Trigger DamageEffect
+                let dmg_effect = DamageEffect {
+                    target: bat_pos,
+                    calc_damage: move_damage,
+                    damage_source: format!("{target_act_pkmn} took {move_damage} damage!")
+                };
+                
+                result_act_vec.push(BattleAction::Damage(dmg_effect));
+            } else {
+                // status move dont do damage effects, only 2nd targets
+                println!("INT[{}/{}] Status move target {def_poke}",
+                    self.turn_num, self.action_num);
+            }
             
-            let base_damage = pkmn_damage_formula(base_power, atk_stat, def_stat);
-            // rng value is calced here
-
-            let mut dmg_modifier_list:VecDeque<f64> = VecDeque::new();
-
-            // NOTE: Ignore 1.0 issues
-            // STAB multiply
-            dmg_modifier_list.push_back(
-                if is_stab { 1.5
-                // TODO: Adaptability & tera checks
-                } else { 1.0 }
-            );
-
-            // Multi-target multiplier
-            dmg_modifier_list.push_back(
-                if num_targets > 1 {0.75} else {1.0}
-            );
-
-            // Resisting type multiplier
-            dmg_modifier_list.push_back(
-                target_act_pkmn.get_type_mult(move_type) as f64
-            );
-
-            // TODO: Status, other modifiers
-            
-            // Sum up the modifiers
-            let mut calc_dmg = base_damage;
-            while let Some(modifier) = dmg_modifier_list.pop_front() {
-                calc_dmg = mult_and_round(calc_dmg, modifier);
-            };
-
-            // TODO: For basic damage, create a range
-            // for multi-hit, each hit is evaluated independently/added after
-
-            let bat_pos = **target_pos;
-            // Trigger DamageEffect
-            let dmg_effect = DamageEffect {
-                target: bat_pos, // TODO: Change to be pokemon
-                calc_damage: calc_dmg,
-                damage_source: format!("{target_act_pkmn} took {calc_dmg} damage!")
-            };
-            
-            result_act_vec.push(BattleAction::Damage(dmg_effect));
-            
-            // let mut cloned_state = self.clone();
-
             // Process secondary effects and add to queue
+            // -------------------------------------------------------------
             use crate::pokemon::moves::MoveEffect;
             if move_action.pkm_move.hit_actions.len() > 0 {
                 
@@ -918,22 +918,42 @@ impl<'battle> BattleState<'battle> {
             } // 2nd effects are done
             
             result_queue.push(result_act_vec);
-            // let mut cloned_state = self.clone();
-            // // TODO: This should prepend in order
-            // cloned_state.action_queue.extend(result_act_vec);
-
-            // let move_acc = PkmnRational::from_float(move_action.pkm_move.accuracy);
-            // result_bcs.push(
-            //     BattleContainer::simple(cloned_state, 
-            //         move_acc) // TODO: Use probablity of move hitting
-            // );
 
             
         }
 
         // TODO: Accuracy can change based on defender, validate this
+        // TODO: If can't miss, override to 1
+        let mut move_acc = move_action.pkm_move.accuracy;
+        
+        // Check if move need protect accuracy
+        if move_action.pkm_move.flags.has_flag(PROTECT_ACC) {
+            // let last_move = get_move(source_act_pkmn.last_move_used.unwrap() );
+            // if last_move.flags.has_flag(PROTECT) {
+                move_acc = PkmnRational::new(1, 
+                    source_act_pkmn.protect_count as u32 * 3).float();
+            // }
+        }
+
+        if move_action.pkm_move.flags.has_flag(IGNORE_ACC) {
+            move_acc = 1.0; //
+        } else {
+            // TODO: Item/ability accuracy modifications
+            // move_acc = 1.0;
+        }
+
+
+        // Increment protect counter if protect counter move
+        // move to protect phase
+        if move_action.pkm_move.flags.has_flag(PROTECT_COUNTER) {
+            source_act_pkmn.protect_count += 1;
+        } else {
+            source_act_pkmn.protect_count = 0;
+        }
+
+
         let prob_set = gen_power_set(
-            vec![PkmnRational::from_float(move_action.pkm_move.accuracy); num_targets]);
+            vec![PkmnRational::from_float(move_acc); num_valid_targets]);
 
         let add_to_queue = 
         |state:&mut BattleState<'battle>, battle_actions:&Vec<BattleAction<'battle>>| {
@@ -948,9 +968,15 @@ impl<'battle> BattleState<'battle> {
             if *rat == PkmnRational::ZERO() {continue;}
             let mut cloned_state = self.clone();
             let mut bc_msg:String = move_msg.clone();
+            
+            // Add attack to history
+            // let atk_pkmn = cloned_state.get_active_mut(move_action.source).unwrap();
+            // atk_pkmn.move_history.push(move_action.pkm_move.name);
+
             for (idx,target_pos) in move_targets.iter().enumerate() {
                     if (bin_comb >> idx) & 0b1 == 1 {
                         add_to_queue(&mut cloned_state, &result_queue[idx]);
+                        
                         // int_clone.perform_stat_change(*target_pos, &stat_action);
                     }
                     // if missed, add message here
@@ -971,6 +997,121 @@ impl<'battle> BattleState<'battle> {
         result_bcs
     }
 
+    /// Base power calculation for moves, TODO: covering special power calcs
+    fn base_power_calc(move_action: &MoveAction, act_poke:&ActivePokemon) -> i32 {
+        let base_power = move_action.pkm_move.power;
+
+        let atk_stat = match move_action.pkm_move.category {
+            Physical => act_poke.get_active_stat(PokemonStatName::ATTACK),
+            Special => act_poke.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
+            _ => 1
+        };
+
+        // TODO: Special power calcs
+
+        return base_power
+    }
+
+    fn calc_move_damage(move_action: &MoveAction,
+        num_valid_targets:usize, 
+        atk_poke:&ActivePokemon, def_poke:&ActivePokemon) -> i32 {
+
+            // Would like to cache this but base_power on weight or Foul Play
+            // Requires more thought
+
+            let atk_stat = match move_action.pkm_move.category {
+                Physical => atk_poke.get_active_stat(PokemonStatName::ATTACK),
+                Special => atk_poke.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
+                _ => 1
+            };
+
+            let base_power = move_action.pkm_move.power;
+
+            let def_stat = match &move_action.pkm_move.category {
+                Physical => def_poke.get_active_stat(PokemonStatName::DEFENSE),
+                Special => def_poke.get_active_stat(PokemonStatName::SPECIAL_DEFENSE),
+                _ => 1
+            };
+
+            let move_type = move_action.pkm_move.r#type;
+            let base_damage = pkmn_damage_formula(base_power, atk_stat, def_stat);
+
+            // ------------
+            
+            let mut dmg_modifier_list:VecDeque<f64> = VecDeque::new();
+
+            // Multi-Targets (x0.75 in doubles)
+            if num_valid_targets > 1 {
+                dmg_modifier_list.push_back(0.75);
+            }
+
+            // Parental Bond check (0.25 if duplicate strike)
+
+            // Weather multiplier x1.5 or x0.5
+            // GlaiveRush x2
+            // Critical hit x1.5
+            // Random factor [x85, x100] then /100
+
+            /*
+            STAB (x1.5 regular, x2.0 adaptability, x1.5 override on pledge combo
+            TERA x1.5 on og type but not tera, x2 if tera type == og type or ADPT no tera
+                x2.25 if match tera and APT
+             */
+            if atk_poke.pokemon.has_type(move_type) {
+                dmg_modifier_list.push_back(1.5);
+            }
+            // 
+            /* Type effectiveness
+                See Forest Curse, Burn Up, Double Shock and Trick-or-Treat for type changes
+                Typeless moves ignores changes
+                Grounded flying = 1, Ring Target(?)
+                Scrappy, Foresight, Odor Sleuth, Miracle Eye
+                Freeze-Dry
+                Flying Press (use both)
+                Strong Wings
+                Tar Shot = Fire x2
+             */
+            let resist_mult = def_poke.get_type_mult(move_type);
+            if resist_mult != 1.0 {
+                dmg_modifier_list.push_back(resist_mult);
+            }
+
+            // Burn check, or Guts
+            // Other (In speed order), see https://bulbapedia.bulbagarden.net/wiki/Damage
+
+            let mut calc_dmg = base_damage;
+            while let Some(modifier) = dmg_modifier_list.pop_front() {
+                calc_dmg = mult_and_round(calc_dmg, modifier);
+            }
+            calc_dmg
+        }
+
+    /// Return if this is a valid target for this
+    fn is_valid_target(&self, move_action: &MoveAction, target_pos:BattlePosition) -> bool {
+
+        if let Some(poke) = self.get_active(target_pos) {
+            // check there's no type immunity to move
+            // TODO: Needs custom text (not affected)
+            // check ability (Scrappy), Grounded, etc
+            if poke.get_type_mult(move_action.pkm_move.r#type) == 0.0 {
+                return false;
+            }
+            // Protect check
+
+            // Powder check
+            if move_action.pkm_move.flags.has_flag(PokemonMoveFlag::POWDER) && 
+                (poke.pokemon.has_type(PokemonType::GRASS)) {
+                return false;
+            }
+
+            return true;
+        } else {
+            // No target on field
+            return false;
+        }
+        
+    }
+    
     // TODO: Complete this later, its important
     fn spawn_bcs_for_power_set<F> (self, prob_set:&[PkmnRational], 
         mut apply_func:F)

@@ -34,7 +34,7 @@ pub enum PokemonName {
 
 #[allow(non_camel_case_types)]
 #[derive(Deserialize, EnumString, Debug, Copy, Clone, Eq, PartialEq)]
-pub enum PokemonAbility {
+pub enum PokemonAbilityName {
     Sand_Force,
     Rough_Skin,
     Defiant,
@@ -87,7 +87,7 @@ pub struct Pokemon {
     pub name: PokemonName,
     pub base_stats: PokemonStats,
     // pub trained_stats: Option<PokemonStats>,
-    pub abilities: Vec<PokemonAbility>,
+    pub abilities: Vec<PokemonAbilityName>,
     // pub nature: PokemonNature,
     pub learnset: Vec<PokemonMoveName>,
     pub weight: f64,
@@ -137,7 +137,7 @@ impl<'de> Deserialize<'de> for Pokemon {
 
         let abilities = data.abilities.into_iter()
             .filter_map(|ability| {
-                match PokemonAbility::from_str(&ability) {
+                match PokemonAbilityName::from_str(&ability) {
                     Ok(parsed_ability) => Some(parsed_ability),
                     Err(_) => {
                         eprintln!(

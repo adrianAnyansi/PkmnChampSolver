@@ -59,8 +59,9 @@ impl<'battle> BattleContainer<'battle> {
         ).sum()
     }
 
-    pub fn add_msg(&mut self, new_str:String) {
+    pub fn add_msg(mut self, new_str:String) -> Self {
         self.message.push_str(&new_str);
+        self
     }
 
     /// If root object, use rng to select a state,

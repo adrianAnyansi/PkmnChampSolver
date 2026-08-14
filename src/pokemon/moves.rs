@@ -1,6 +1,8 @@
 // moves and information
 #![allow(dead_code)]
 
+use std::fmt::write;
+
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
@@ -52,6 +54,8 @@ pub struct PokemonMove {
     contact: bool,
     pub target_type: BattleTarget,
     pub hit_actions: Vec<MoveEffect>,
+
+    pub flags: PokemonMoveBitFlag
 }
 
 /// Describe an effect that occurs after a move/ability
@@ -112,7 +116,8 @@ impl<'simulation> PokemonMove {
             contact: false,
             priority: 0,
             target_type: ANY,
-            hit_actions: vec![]
+            hit_actions: vec![],
+            flags: PokemonMoveBitFlag::new(vec![])
         }
     }
 
@@ -130,7 +135,8 @@ impl<'simulation> PokemonMove {
             contact: false,
             priority: 0,
             target_type: target,
-            hit_actions: vec![]
+            hit_actions: vec![],
+            flags: PokemonMoveBitFlag::new(vec![])
         }
     }
 
@@ -174,9 +180,14 @@ impl<'simulation> PokemonMove {
             self
         }
 
-    pub fn add_flag(mut self,
+    pub fn add_dummy_flag(mut self,
         flag:&str) -> Self {
             // TODO: Add custom flag for stuff
+            self
+        }
+
+    pub fn add_flag(mut self, flag:PokemonMoveFlag) -> Self {
+            self.flags.set_flag(flag);
             self
         }
 
@@ -348,6 +359,84 @@ pub enum PokemonMoveName {
 
 }
 
+#[allow(non_camel_case_types)]
+/// Flag of important move/item/ability effects
+#[derive(Clone, Copy)]
+pub enum PokemonMoveFlag {
+    POWDER, // Powder moves are ignored by Grass, OverCoat & Safety Goggles
+    SLICING, // Move boosted by Sharpness
+    // PULSE, // Move boosted by Pulse (Mega Launcher)
+    // BALL_BOMB, // Blocked by Bullet Proof
+    // BITING, // Strong Jaw
+    // PUNCHING, // Iron Fist & Punching Glove
+    SOUND, // Throat Chop, Throat Spray and etc
+    // WIND,
+
+    CUSTOM_POWER, // Custom power calculation is required
+
+    PROTECT,    // Apply protect to this pokemon
+    PROTECT_ACC, // Modify accuracy by consecutive protects if used
+    PROTECT_COUNTER, // Increment the protect counter if consecutive
+
+    PRIORITY_1,
+    PRIORITY_3,    
+    PRIORITY_4,
+    PRIORITY_MINUS_1,
+
+    IGNORE_ACC, // This move ignores accuracy checks
+}
+
+/// Move flag will have 128 slots, once enum increases, add another flag
+#[derive(Clone, Debug)]
+pub struct PokemonMoveBitFlag {
+    flag: u128
+}
+
+impl PokemonMoveBitFlag {
+    pub fn new(init_flags:Vec<PokemonMoveFlag>) -> Self {
+        let mut pkmn_flag = PokemonMoveBitFlag {
+            flag: 0
+        };
+        pkmn_flag = pkmn_flag.set_flags(init_flags);
+        pkmn_flag
+    }
+
+    pub fn has_flag(&self, flag_id:PokemonMoveFlag) -> bool {
+        let flag_int = flag_id as u128;
+        self.flag & flag_int != 0
+    }
+    
+    pub fn set_flag(&mut self, flag_id:PokemonMoveFlag) {
+        self.flag |= 1u128 << (flag_id as u128);
+    }
+
+    pub fn set_flags(mut self, flags:Vec<PokemonMoveFlag>) -> Self {
+        for flag in flags {
+            self.set_flag(flag);
+        }
+        self
+    }
+}
+
+impl std::fmt::Display for PokemonMoveBitFlag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.flag)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_flags_builds_with_all_flags() {
+        let bit_flag = PokemonMoveBitFlag::new(vec![])
+            .set_flags(vec![PokemonMoveFlag::POWDER]);
+
+        assert!(bit_flag.has_flag(PokemonMoveFlag::POWDER));
+    }
+}
+
 pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
 
     use PokemonMoveCategory::*;
@@ -395,7 +484,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             pkmn_move_name, GRASS, ANY
         ).set_attr(0, 0.75, ANY)
         .status_effect(SLEEP, PkmnRational::ONE(), OPPONENT)
-        .add_flag("Powder"),
+        .add_dummy_flag("Powder").add_flag(PokemonMoveFlag::POWDER),
 
         PokemonMoveName::Heat_Wave => PokemonMove::new(
             pkmn_move_name, FIRE, Special
@@ -406,27 +495,31 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Solar_Beam => PokemonMove::new(
             pkmn_move_name, GRASS, Special
         ).set_attr(120, 1.0, OPPONENT)
-        .add_flag("Charging")
-        .add_flag("weather_boost")
-        .add_flag("weather_charge"),
+        .add_dummy_flag("Charging")
+        .add_dummy_flag("weather_boost")
+        .add_dummy_flag("weather_charge"),
 
         PokemonMoveName::Weather_Ball => PokemonMove::new(
             pkmn_move_name, NORMAL, Special
         ).set_attr(60, 1.0, OPPONENT)
-        .add_flag("weather_boost")
-        .add_flag("custom_power"),
+        .add_dummy_flag("weather_boost")
+        .add_dummy_flag("custom_power"),
         
         PokemonMoveName::Protect => PokemonMove::status(
             pkmn_move_name, NORMAL, SELF
         ).set_attr(0, 1.0, SELF)
-        .add_flag("protect")
-        .add_flag("protect_stall")
-        .add_flag("priority +4"),
+        .add_flag(PokemonMoveFlag::PROTECT)
+        .add_flag(PokemonMoveFlag::PROTECT_COUNTER)
+        .add_flag(PokemonMoveFlag::PROTECT_ACC)
+        .add_flag(PokemonMoveFlag::PRIORITY_4)
+        .add_dummy_flag("protect")
+        .add_dummy_flag("protect_stall")
+        .add_dummy_flag("priority +4"),
 
         PokemonMoveName::Earthquake => PokemonMove::new(
             pkmn_move_name, GROUND, Physical
         ).set_attr(100, 1.0, ALL_EXCEPT_SELF)
-        .add_flag("dig_boost"),
+        .add_dummy_flag("dig_boost"),
         
         PokemonMoveName::Rock_Slide => PokemonMove::new(
             pkmn_move_name, ROCK, Physical
@@ -436,32 +529,32 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Stomping_Tantrum => PokemonMove::new(
             pkmn_move_name, GROUND, Physical
         ).set_attr(75, 1.0, OPPONENT)
-        .add_flag("boost_if_failed_last"),
+        .add_dummy_flag("boost_if_failed_last"),
 
         PokemonMoveName::Fake_Out => PokemonMove::new(
             pkmn_move_name, NORMAL, Physical
         ).set_attr(40, 1.0, OPPONENT)
         .add_flinch(PkmnRational::ONE())
-        .add_flag("custom_use"),
+        .add_dummy_flag("custom_use"),
         // TODO: Prevent use after turn 1
 
         PokemonMoveName::Flare_Blitz => PokemonMove::new(
             pkmn_move_name, FIRE, Physical
         ).set_attr(120, 1.0, OPPONENT)
         .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
-        .add_flag("recoil 1/3"),
+        .add_dummy_flag("recoil 1/3"),
 
 
         PokemonMoveName::Parting_Shot => PokemonMove::status(
             pkmn_move_name, DARK, OPPONENT)
             .stat_change(ATTACK, MINUS_1, OPPONENT, PkmnRational::ONE().float())
             .stat_change(SPECIAL_ATTACK, MINUS_1, OPPONENT, PkmnRational::ONE().float())
-            .add_flag("switch self"), // TODO: Add switch effect
+            .add_dummy_flag("switch self"), // TODO: Add switch effect
 
         PokemonMoveName::Throat_Chop => PokemonMove::new(
             pkmn_move_name, DARK, Physical
         ).set_power(80)
-        .add_flag("Throat_chopped 2"),
+        .add_dummy_flag("Throat_chopped 2turns"),
 
         PokemonMoveName::Moonblast => PokemonMove::new(
             pkmn_move_name, FAIRY, Special
@@ -481,15 +574,15 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             pkmn_move_name, GRASS, Special
         ).set_power(80).set_target(OPPONENT_ALL)
         .status_effect(BURNED, PkmnRational::pct(20), BattleTarget::OPPONENT,)
-        .add_flag("recover 1/2"),
+        .add_dummy_flag("recover 1/2"),
 
         Rage_Powder => PokemonMove::status(
             pkmn_move_name, BUG, SELF
-        ).add_flag("center_of_attention"),
+        ).add_dummy_flag("center_of_attention"),
 
         Trick_Room => PokemonMove::status(
             pkmn_move_name, PSYCHIC, SELF)
-        .add_flag("trick room"),
+        .add_dummy_flag("trick room"),
 
         // reduce stats on hit
         Close_Combat => PokemonMove::new(
@@ -504,7 +597,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
         .status_effect(PARALYZED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
         .status_effect(SLEEP, PkmnRational::pct(10), BattleTarget::OPPONENT,)
-        .add_flag("slicing"),
+        .add_dummy_flag("slicing").add_flag(PokemonMoveFlag::SLICING),
         
         Swords_Dance => PokemonMove::status(
             pkmn_move_name, NORMAL, SELF)
@@ -514,17 +607,17 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Heavy_Slam => PokemonMove::new(
             pkmn_move_name, STEEL, Physical
         ).set_power(0)
-        .add_flag("custom_power")
-        .add_flag("power based on weight"),
+        .add_dummy_flag("custom_power")
+        .add_dummy_flag("power based on weight"),
 
         High_Horsepower => PokemonMove::new(
             pkmn_move_name, GROUND, Physical
         ).set_power(95),
         Wide_Guard => PokemonMove::status(
             pkmn_move_name, ROCK, ALLY_ALL)
-        .add_flag("spread_protect")
-        .add_flag("protect_stall")
-        .add_flag("priority +3"),
+        .add_dummy_flag("spread_protect")
+        .add_dummy_flag("protect_stall")
+        .add_dummy_flag("priority +3"),
         
         Will_O_Wisp => PokemonMove::status(
             pkmn_move_name, FIRE, OPPONENT
@@ -542,12 +635,12 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
 
         Light_Screen => PokemonMove::status(
             pkmn_move_name, PSYCHIC, ALLY_ALL
-        ).add_flag("light_screen"),
+        ).add_dummy_flag("light_screen"),
         
         Knock_Off => PokemonMove::new(
             pkmn_move_name, DARK, Physical
         ).set_power(65)
-        .add_flag("knock_off"),
+        .add_dummy_flag("knock_off"),
         
         _ => panic!("Move has not been implemented!")
     }
