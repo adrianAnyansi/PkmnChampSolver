@@ -1,12 +1,12 @@
 // moves and information
 #![allow(dead_code)]
 
-use std::fmt::write;
 
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{self, AddEffect, BattleAction, BattleEffect::{self, Flinch}, BattleState, MoveAction, PokemonStatus::{self, BURNED, PARALYZED, SLEEP}}, math::PkmnRational, pokemon::{moves::BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}}};
+use crate::{battle::{ BattleEffect::{self, Flinch}, BattleState, MoveAction, }, math::PkmnRational, pokemon::{moves::BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}}};
+use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
 /// Move type and additional information
@@ -18,7 +18,7 @@ pub enum PokemonMoveCategory {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Debug, EnumString, Display)]
+#[derive(Clone, Copy, Debug, EnumString, Display, PartialEq)]
 pub enum BattleTarget {
     /// Target 1 opponent
     OPPONENT,
@@ -55,7 +55,7 @@ pub struct PokemonMove {
     pub target_type: BattleTarget,
     pub hit_actions: Vec<MoveEffect>,
 
-    pub flags: PokemonMoveBitFlag
+    pub flags: PokemonBitFlag128<PokemonMoveFlag>
 }
 
 /// Describe an effect that occurs after a move/ability
@@ -117,7 +117,7 @@ impl<'simulation> PokemonMove {
             priority: 0,
             target_type: ANY,
             hit_actions: vec![],
-            flags: PokemonMoveBitFlag::new(vec![])
+            flags: PokemonBitFlag128::new(vec![])
         }
     }
 
@@ -136,7 +136,7 @@ impl<'simulation> PokemonMove {
             priority: 0,
             target_type: target,
             hit_actions: vec![],
-            flags: PokemonMoveBitFlag::new(vec![])
+            flags: PokemonBitFlag128::new(vec![])
         }
     }
 
@@ -196,6 +196,13 @@ impl<'simulation> PokemonMove {
             self.hit_actions.push(MoveEffect::General(
                 BattleEffect::Flinch, BattleTarget::OPPONENT, chance));
             self
+    }
+
+    pub fn add_generic(mut self, b_effect:BattleEffect,
+    target_pos:BattleTarget, rat:PkmnRational) -> Self {
+        // let real_rat = rat.unwrap_or(PkmnRational::ONE());
+        self.hit_actions.push(MoveEffect::General(b_effect, target_pos, rat));
+        self
     }
 
 
@@ -303,7 +310,7 @@ pub struct BattlePreEffect {
 }
 
 #[allow(dead_code, non_camel_case_types)]
-#[derive(Display, EnumString, Debug, Deserialize, Copy, Clone)]
+#[derive(Display, EnumString, Debug, Deserialize, Copy, Clone, PartialEq)]
 pub enum PokemonMoveName {
     Draco_Meteor,
     Kowtow_Cleave,
@@ -361,7 +368,7 @@ pub enum PokemonMoveName {
 
 #[allow(non_camel_case_types)]
 /// Flag of important move/item/ability effects
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum PokemonMoveFlag {
     POWDER, // Powder moves are ignored by Grass, OverCoat & Safety Goggles
     SLICING, // Move boosted by Sharpness
@@ -370,9 +377,14 @@ pub enum PokemonMoveFlag {
     // BITING, // Strong Jaw
     // PUNCHING, // Iron Fist & Punching Glove
     SOUND, // Throat Chop, Throat Spray and etc
-    // WIND,
+    WIND, // Boosted by Wind power
 
-    CUSTOM_POWER, // Custom power calculation is required
+    /// Move has a charging state
+    CHARGING,
+    /// Custom power/behaviour based on weather
+    WEATHER_MODIFY,
+    /// Custom power in general
+    CUSTOM_POWER,
 
     PROTECT,    // Apply protect to this pokemon
     PROTECT_ACC, // Modify accuracy by consecutive protects if used
@@ -386,31 +398,56 @@ pub enum PokemonMoveFlag {
     IGNORE_ACC, // This move ignores accuracy checks
 }
 
-/// Move flag will have 128 slots, once enum increases, add another flag
-#[derive(Clone, Debug)]
-pub struct PokemonMoveBitFlag {
-    flag: u128
+pub trait BitFlagValue128: Copy {
+    fn as_u128(self) -> u128;
 }
 
-impl PokemonMoveBitFlag {
-    pub fn new(init_flags:Vec<PokemonMoveFlag>) -> Self {
-        let mut pkmn_flag = PokemonMoveBitFlag {
-            flag: 0
+impl BitFlagValue128 for PokemonMoveFlag {
+    fn as_u128(self) -> u128 {
+        self as u128
+    }
+}
+
+/// Move flag will have 128 slots, once enum increases, add another flag
+#[derive(Clone, Debug)]
+pub struct PokemonBitFlag128<T = PokemonMoveFlag>
+where
+    T: BitFlagValue128,
+{
+    flag: u128,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> PokemonBitFlag128<T>
+where
+    T: BitFlagValue128,
+{
+    pub fn new(init_flags: Vec<T>) -> Self {
+        let mut pkmn_flag = PokemonBitFlag128::<T> {
+            flag: 0,
+            _marker: std::marker::PhantomData,
         };
         pkmn_flag = pkmn_flag.set_flags(init_flags);
         pkmn_flag
     }
 
-    pub fn has_flag(&self, flag_id:PokemonMoveFlag) -> bool {
-        let flag_int = flag_id as u128;
-        self.flag & flag_int != 0
-    }
-    
-    pub fn set_flag(&mut self, flag_id:PokemonMoveFlag) {
-        self.flag |= 1u128 << (flag_id as u128);
+    pub fn empty() -> Self {
+        return PokemonBitFlag128::<T> {
+            flag: 0,
+            _marker: std::marker::PhantomData,
+        };
     }
 
-    pub fn set_flags(mut self, flags:Vec<PokemonMoveFlag>) -> Self {
+    pub fn has_flag(&self, flag_id: T) -> bool {
+        let flag_int = flag_id.as_u128();
+        self.flag & (1u128 << flag_int) != 0
+    }
+    
+    pub fn set_flag(&mut self, flag_id: T) {
+        self.flag |= 1u128 << flag_id.as_u128();
+    }
+
+    pub fn set_flags(mut self, flags: Vec<T>) -> Self {
         for flag in flags {
             self.set_flag(flag);
         }
@@ -418,7 +455,13 @@ impl PokemonMoveBitFlag {
     }
 }
 
-impl std::fmt::Display for PokemonMoveBitFlag {
+
+// TODO: Convert this back into the generic to get
+// the string of all flags set to true
+impl<T> std::fmt::Display for PokemonBitFlag128<T>
+where
+    T: BitFlagValue128,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.flag)
     }
@@ -430,7 +473,7 @@ mod tests {
 
     #[test]
     fn set_flags_builds_with_all_flags() {
-        let bit_flag = PokemonMoveBitFlag::new(vec![])
+        let bit_flag = PokemonBitFlag128::<PokemonMoveFlag>::new(vec![])
             .set_flags(vec![PokemonMoveFlag::POWDER]);
 
         assert!(bit_flag.has_flag(PokemonMoveFlag::POWDER));
@@ -484,7 +527,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             pkmn_move_name, GRASS, ANY
         ).set_attr(0, 0.75, ANY)
         .status_effect(SLEEP, PkmnRational::ONE(), OPPONENT)
-        .add_dummy_flag("Powder").add_flag(PokemonMoveFlag::POWDER),
+        .add_flag(PokemonMoveFlag::POWDER),
 
         PokemonMoveName::Heat_Wave => PokemonMove::new(
             pkmn_move_name, FIRE, Special
@@ -495,6 +538,8 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Solar_Beam => PokemonMove::new(
             pkmn_move_name, GRASS, Special
         ).set_attr(120, 1.0, OPPONENT)
+        .add_flag(PokemonMoveFlag::CHARGING)
+        .add_flag(PokemonMoveFlag::WEATHER_MODIFY)
         .add_dummy_flag("Charging")
         .add_dummy_flag("weather_boost")
         .add_dummy_flag("weather_charge"),
@@ -512,6 +557,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         .add_flag(PokemonMoveFlag::PROTECT_COUNTER)
         .add_flag(PokemonMoveFlag::PROTECT_ACC)
         .add_flag(PokemonMoveFlag::PRIORITY_4)
+        .add_generic(BattleEffect::Protect, BattleTarget::SELF, PkmnRational::ONE())
         .add_dummy_flag("protect")
         .add_dummy_flag("protect_stall")
         .add_dummy_flag("priority +4"),

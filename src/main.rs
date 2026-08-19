@@ -1,11 +1,15 @@
 use crate::battle::battle_processor::{BattleContainer, BattleProcessor};
-use crate::battle::{ActivePokemon, BattlePosition, BattleState};
+use crate::battle::{data::ActivePokemon, BattlePosition, BattleState};
 use crate::math::PkmnRational;
 use crate::pokemon::types::{PokemonType, get_type_multipler};
 
 mod battle;
 mod pokemon;
 mod math;
+
+#[cfg(test)]
+mod move_tests;
+
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::PokemonMoveName::{self};
 

@@ -9,6 +9,31 @@ There's so many issues where I need to consistently think about how best to impl
 - Flag for all moves that count for protection
 - Logic for accuracy changes
 
+Ok so the protect counter always needs to be accessed, and specifically on hit
+I have to reset the counter on every executed move that isnt a protect move
+I can't process this chain
+
+For any move
+- Reset counter to 0
+For protect move
+- If failed, reset to 0
+- If success, increase counter
+
+This implies a default reset always, which disables on protect move success
+However there is no default action, it makes sense to specifically have functions on miss, but again the DEFAULT move is reset to 0
+So both are necessary.
+
+Since protect is treated as a promoted hit_action, there's no avenue for missed action and none would scale for causes like high-jump-kick or etc.
+I'm adding a miss action and that will contain reset logic?
+Or maybe override the null case for protect specifically since its the only time that this matters currently... ok i'm going with that now
+
+All these issues are because of protect_counter and not the 2nd effect logic, so thats the exception.
+
+Ok so now
+1. hit action Protect adds BattleAction::Protect
+2. This will call to sim_protect (I can add miss case in sim_protect)
+3. Add the clones and states
+
 # Stomping Tantrum
 If last turn the move missed, failed to affect or was prevented by an effect, power is doubled.
 So I need to know if a move missed as well as history?

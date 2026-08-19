@@ -1,31 +1,32 @@
 # TODO
+Just moves from 2 teams, just 2 teams focus
 
-Reducing this file so it's just current tasks
-Goal is to keep the task small and focused
+I need to finish all the moves, and I need better testing cause I'm worrying things won't work correctly-
 
-I'm going to pick 2 teams from the last pokemon champions tourney
-Then simulate the whole match (without universes*)
+Collapse works, going to think about the teams and move choice later, still mechanics I'm missing
 
-Moves/Pokes are implemented
-Next is the Container/processor
+## Todo
 damage calc is still invalid on lower end*
     - might need a better way to do this
 Then speed / priority calculations
-Then implementing teams and draft selection stuff?
+Then implementing teams, switch/faint effects and draft selection stuff?
 
 ## Thoughts
 
-Working on a generic N targets for an event
-    Message made this more difficult, I think it should go into the battle state as a temp variable
+With messages on battle state, event can be made, but later
 
  ---
-The best way to impl moves/etc is to do tests, but I need better helpers for making battles/pokemon rn
-
-Want to work on bitflags to compare move things quickly
-Need to implement Switching and Fainting so I can work on turn mechanics and end of battle
-Speed order at some point of course
 
 ## Today
+Protect is done (just protect). Moving on
+
+Solar Beam can't be done cause I have no turn end for charging right now
+Stomping Tantrum next... failed move time, neat
+    This also requires turn end, ok lets just do this imo
+Then Fake Out - (speed priority)
+Throat Chop needs a data field for turns remaining
+Matcha Gotcha drain needed
+
 
 In order to make Protect, heres the plan
 1. Set protect flag on user
