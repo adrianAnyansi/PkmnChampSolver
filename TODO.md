@@ -16,9 +16,16 @@ Then implementing teams, switch/faint effects and draft selection stuff?
 With messages on battle state, event can be made, but later
 
  ---
+ After all actions are done, turn end is inited, do a co routine where end-of-turn actions occur
+ Going to set a flag so code doesn't accidentally skip turns without checking things
+ I want a volatile "battle state" to clear, i mean well technically there is no internal pokemon state outside HP (so far)
+
+
 
 ## Today
-Protect is done (just protect). Moving on
+
+Lets do turns.
+Then I'll do Solar Beam, and then Stomping logic
 
 Solar Beam can't be done cause I have no turn end for charging right now
 Stomping Tantrum next... failed move time, neat
@@ -27,13 +34,7 @@ Then Fake Out - (speed priority)
 Throat Chop needs a data field for turns remaining
 Matcha Gotcha drain needed
 
-
-In order to make Protect, heres the plan
-1. Set protect flag on user
-2. Use move_history to keep track of moves (good for last resort, multiple moves & etc)
-3. Move fails if Pokemon is last (not used)
-
-Also need to think about 2nd effects on block, like Spiky Shield or Baneful. So the hit is blocked but it still counts as an effect trigger
+# Long Goal
 
 Need easier pokemon & move creation, going to make a central library to contain all
 Then more testing with spread moves

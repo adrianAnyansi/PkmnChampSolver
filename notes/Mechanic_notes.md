@@ -34,6 +34,36 @@ Ok so now
 2. This will call to sim_protect (I can add miss case in sim_protect)
 3. Add the clones and states
 
+
+# Charging moves
+
+Doing multi turn logic is confusing, trying to figure this out since there are a lot of cases.
+
+Moves like Electro Shot, Meteor Beam, Skull Bash have stat changes on turn 1. Other moves do not
+Similar 2 turn moves also need this (turn 1 do this, turn 2 do this)
+I was considering putting a BREAKER in hit_actions for turn 1, turn 2 but flags are for both, so i can make the assumption but hell-
+
+Trying to wrap together all multi-turn moves while keeping Pokemon functionality ends up having me just port the engine to keep the same functionality.
+
+I.E for Rampaging moves, need a counter + locked move
+For 2 turn, need charing state and separator
+For Dragon Darts, need a custom move action generated after the move
+For multi-hit, roll a counter and then do N damage 
+
+I'm going to stop overthinking and just do the 2 turn
+
+
+charging needs to use a base cloned state, so things with an early exit is possible.
+Sim_move currently makes a bunch of effects but doesn't directly edit the clone. For protect, it also sends an action, so going to do a thing.
+This makes sense since an effect can be operated by many things, but for charge which only works on the pokemon its odd. 
+
+Basically I can do 
+Charge Effect -> If skipped, then put the move thing
+See https://bulbapedia.bulbagarden.net/wiki/Category:Moves_with_a_charging_turn for all things
+
+## Separate script
+Oh yea I forgot, I was thinking of doing a separate move which would cover most things? Ok just ignoring this idea ngl
+
 # Stomping Tantrum
 If last turn the move missed, failed to affect or was prevented by an effect, power is doubled.
 So I need to know if a move missed as well as history?

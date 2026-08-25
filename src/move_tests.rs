@@ -1,5 +1,5 @@
 use crate::battle::battle_processor::BattleContainer;
-use crate::battle::data::ActivePokemon;
+use crate::battle::data::{ActivePokemon, BattleWeatherState};
 use crate::battle::{BattleAction, BattlePosition, BattleState};
 use crate::math::PkmnRational;
 use crate::pokemon::PokemonName;
@@ -49,6 +49,68 @@ fn test_protect_blocks_earthquake_damage() {
         future_actions.iter().all(|action| !matches!(action, BattleAction::Damage(_))),
         "Protect should block the Earthquake damage targeting Garchomp"
     );
+}
+
+#[test]
+fn test_solar_beam_takes_two_move_actions_to_damage() {
+    let mut root_bc = dummy_bc();
+    let solar_beam = get_move(PokemonMoveName::Solar_Beam);
+    let initial_hp = root_bc.battle_state.as_ref().unwrap().f_poke1.as_ref().unwrap().current_hp;
+
+    BattleState::queue_move(
+        &mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::B1,
+        &solar_beam,
+        vec![BattlePosition::F1],
+    );
+    root_bc.sim_next_action();
+
+    let charged_state = root_bc.battle_state.as_ref().unwrap();
+    assert_eq!(charged_state.f_poke1.as_ref().unwrap().current_hp, initial_hp);
+    assert!(charged_state.b_poke1.as_ref().unwrap().battle_status.has_flag(
+        crate::battle::data::PokemonBattleState::CHARGING
+    ));
+
+    BattleState::queue_move(
+        &mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::B1,
+        &solar_beam,
+        vec![BattlePosition::F1],
+    );
+    root_bc.sim_next_action();
+
+    assert!(root_bc.battle_state.as_ref().unwrap().action_queue.iter()
+        .any(|action| matches!(action, BattleAction::Damage(_))));
+
+    root_bc.sim_next_action();
+    assert!(root_bc.battle_state.as_ref().unwrap().f_poke1.as_ref().unwrap().current_hp < initial_hp);
+}
+
+#[test]
+fn test_solar_beam_skips_charge_in_sun() {
+    let mut root_bc = dummy_bc();
+    let solar_beam = get_move(PokemonMoveName::Solar_Beam);
+    let battle_state = root_bc.battle_state.as_mut().unwrap();
+    battle_state.weather = BattleWeatherState::SUN;
+    let initial_hp = battle_state.f_poke1.as_ref().unwrap().current_hp;
+
+    BattleState::queue_move(
+        &mut battle_state.action_queue,
+        BattlePosition::B1,
+        &solar_beam,
+        vec![BattlePosition::F1],
+    );
+    root_bc.sim_next_action();
+
+    let battle_state = root_bc.battle_state.as_ref().unwrap();
+    assert!(!battle_state.b_poke1.as_ref().unwrap().battle_status.has_flag(
+        crate::battle::data::PokemonBattleState::CHARGING
+    ));
+    assert!(battle_state.action_queue.iter()
+        .any(|action| matches!(action, BattleAction::Damage(_))));
+
+    root_bc.sim_next_action();
+    assert!(root_bc.battle_state.as_ref().unwrap().f_poke1.as_ref().unwrap().current_hp < initial_hp);
 }
 
 

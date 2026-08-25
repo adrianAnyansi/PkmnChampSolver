@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ BattleEffect::{self, Flinch}, BattleState, MoveAction, }, math::PkmnRational, pokemon::{moves::BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}}};
+use crate::{battle::{ BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::ActivePokemon, }, math::PkmnRational, pokemon::{moves::BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -63,7 +63,9 @@ pub struct PokemonMove {
 pub enum MoveEffect {
     Stat(StatChange),
     Status(PokemonStatus, BattleTarget, PkmnRational),
-    General(BattleEffect, BattleTarget, PkmnRational)
+    General(BattleEffect, BattleTarget, PkmnRational),
+    /// Charge move, Source, Target
+    Charge(BattlePosition)
 }
 
 /// Indicates a change in stat boosts
@@ -427,7 +429,7 @@ where
             flag: 0,
             _marker: std::marker::PhantomData,
         };
-        pkmn_flag = pkmn_flag.set_flags(init_flags);
+        pkmn_flag.set_flags(init_flags);
         pkmn_flag
     }
 
@@ -438,19 +440,26 @@ where
         };
     }
 
+    /// Check flag is set in BitFlag
     pub fn has_flag(&self, flag_id: T) -> bool {
         let flag_int = flag_id.as_u128();
         self.flag & (1u128 << flag_int) != 0
     }
     
-    pub fn set_flag(&mut self, flag_id: T) {
+    pub fn set_flag(&mut self, flag_id: T) -> &mut Self {
         self.flag |= 1u128 << flag_id.as_u128();
+        self
     }
 
-    pub fn set_flags(mut self, flags: Vec<T>) -> Self {
+    pub fn set_flags(&mut self, flags: Vec<T>) -> &mut Self {
         for flag in flags {
             self.set_flag(flag);
         }
+        self
+    }
+
+    pub fn clear_flag(&mut self, flag_id: T) -> &mut Self {
+        self.flag |= 0u128 << flag_id.as_u128();
         self
     }
 }
@@ -473,8 +482,8 @@ mod tests {
 
     #[test]
     fn set_flags_builds_with_all_flags() {
-        let bit_flag = PokemonBitFlag128::<PokemonMoveFlag>::new(vec![])
-            .set_flags(vec![PokemonMoveFlag::POWDER]);
+        let mut bit_flag = PokemonBitFlag128::<PokemonMoveFlag>::new(vec![]);
+        bit_flag.set_flags(vec![PokemonMoveFlag::POWDER]);
 
         assert!(bit_flag.has_flag(PokemonMoveFlag::POWDER));
     }
@@ -540,7 +549,6 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         ).set_attr(120, 1.0, OPPONENT)
         .add_flag(PokemonMoveFlag::CHARGING)
         .add_flag(PokemonMoveFlag::WEATHER_MODIFY)
-        .add_dummy_flag("Charging")
         .add_dummy_flag("weather_boost")
         .add_dummy_flag("weather_charge"),
 
@@ -691,3 +699,20 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         _ => panic!("Move has not been implemented!")
     }
 }
+
+
+pub fn get_charge_message(move_name:PokemonMoveName) -> String {
+    match move_name {
+        PokemonMoveName::Solar_Beam => "{source_name} absorbed sunlight!".to_string(),
+        _ => format!("{} is charging!", move_name)
+    }
+}
+
+pub fn format_pkmn_message(message_template:String,
+    source_poke:&ActivePokemon,
+    dest_poke:Option<ActivePokemon>) -> String {
+
+        message_template
+        .replace("{source_poke}", &source_poke.to_string())
+        .replace("{dest_poke}", &dest_poke.map_or("dest_poke".to_string(), |p| p.to_string()))
+    }

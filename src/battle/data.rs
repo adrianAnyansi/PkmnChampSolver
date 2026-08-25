@@ -1,5 +1,7 @@
 // Continaing battle state info away from engine impl
 
+use strum_macros::{Display, EnumString};
+
 use crate::pokemon::types::{PokemonType, get_type_multipler};
 use crate::pokemon::{self, Pokemon, PokemonAbilityName, PokemonName};
 use crate::pokemon::moves::{BitFlagValue128, PokemonBitFlag128, PokemonMoveName};
@@ -8,6 +10,10 @@ use crate::pokemon::moves::{BitFlagValue128, PokemonBitFlag128, PokemonMoveName}
 #[derive(Copy, Clone, Debug)]
 pub enum PokemonBattleState {
     PROTECT, // Pokemon is protected, immune to all* damage
+    /// Pokemon is flinching and cannot act this turn
+    FLINCHING,
+    /// Pokemon is charging for next turn
+    CHARGING
 }
 
 impl BitFlagValue128 for PokemonBattleState {
@@ -89,6 +95,7 @@ pub struct ActivePokemon {
     pub consec_protect_count: u8,
     /// pointer to keep track of last move executed
     pub last_move_used: Option<PokemonMoveName>,
+    pub forced_move: Option<PokemonMoveName>,
     pub battle_status: PokemonBitFlag128<PokemonBattleState>,
 }
 
@@ -117,6 +124,7 @@ impl ActivePokemon {
                 turns_active: 0, // first turn effect counter
                 consec_protect_count: 0,
                 last_move_used: None,
+                forced_move: None,
                 // in_battle_flags: HashMap::new(), // Keep track of various flags
                 battle_status: PokemonBitFlag128::<PokemonBattleState>::empty(),
             }
@@ -222,4 +230,24 @@ pub struct ActiveTeam {
     // tera
     // gigata?
     // any other team based stuff here
+}
+
+
+#[derive(PartialEq, Clone, Copy, EnumString, Display)]
+pub enum BattleWeatherState {
+    /// No weather
+    NONE,
+    SUN,
+    RAIN,
+    SANDSTORM,
+    /// No longer possible
+    // HAIL,
+    /// Boosts Blizzard and Ice defense
+    SNOW,
+    /// Primal Sun from Origin Groudon
+    EXTREME_SUN,
+    /// Primal Rain from Origin Kyogre
+    EXTREME_RAIN,
+    /// Primal weather from Mega Rayquaza
+    STRONG_WINDS
 }

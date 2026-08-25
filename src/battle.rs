@@ -11,9 +11,10 @@ pub mod data;
 // use crate::batt
 
 
-use crate::battle::data::{ActivePokemon, PokemonBattleState, PokemonStatus};
+use crate::battle;
+use crate::battle::data::{ActivePokemon, BattleWeatherState, PokemonBattleState, PokemonStatus};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, PROTECT, PROTECT_ACC, PROTECT_COUNTER};
-use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, get_move};
+use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
@@ -55,9 +56,15 @@ pub enum BattleAction<'battle> {
     /// Pokemon took damage from any source
     Damage(DamageEffect),
     Faint(BattlePosition),
-    Protect(PokemonMoveName, BattlePosition, PkmnRational), // Protect state
-    Message(String), // Add this message to the battle state, no action
+    /// Protect state
+    Protect(PokemonMoveName, BattlePosition, PkmnRational), 
+    /// Add this message to the battle state, no action
+    Message(String),
     HitAction(MoveAction<'battle>, String),
+    /// Set flag on active pokemon, <position, state, set>
+    SetFlag(BattlePosition, PokemonBattleState, bool),
+    /// Force pokemon to use move
+    ForceMove(BattlePosition, PokemonMoveName)
 }
 
 impl core::fmt::Display for BattleAction<'_> {
@@ -205,6 +212,7 @@ pub struct AddEffect {
 }
 
 /// Enum representing effects from moves & etc
+#[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq)] 
 pub enum BattleEffect {
     Flinch,
@@ -216,7 +224,8 @@ pub enum BattleEffect {
     Encore,
     Leech_Seed,
     Bound,
-    Protect
+    Protect,
+    Charging
 }
 
 pub enum DamageSource {
@@ -241,8 +250,9 @@ pub struct BattleState<'battle> {
     pub f_poke2: Option<ActivePokemon>,
     pub b_poke1: Option<ActivePokemon>,
     pub b_poke2: Option<ActivePokemon>,
-    pub weather: String,
-    // active terrain (only 1) on the field
+    /// Current Weather
+    pub weather: BattleWeatherState,
+    /// active terrain (only 1) on the field
     pub terrain: String,
     pub effects: String,
     pub room: String,
@@ -252,9 +262,14 @@ pub struct BattleState<'battle> {
     // pub current_action: Option<String>,
     // NOTE: If speed/ability/etc order is hard to order, create a different queue
     pub action_queue: VecDeque<BattleAction<'battle>>,
+    /// Current battle turn number
     pub turn_num: i32,
+    /// Action number
     pub action_num: i32,
-    pub action_strs: Vec<String>
+    /// Strings to display for actions
+    pub action_strs: Vec<String>,
+    /// Bool flag when turn is complete
+    pub turn_complete: bool
 }
 
 impl<'battle> BattleState<'battle> {
@@ -266,7 +281,7 @@ impl<'battle> BattleState<'battle> {
             b_poke1: None,
             b_poke2: None,
             // Will implement this properly later in the future idc rn
-            weather: "None".to_string(),
+            weather: BattleWeatherState::NONE,
             terrain: "None".to_string(),
             effects: "None".to_string(),
             room: "None".to_string(),
@@ -276,7 +291,8 @@ impl<'battle> BattleState<'battle> {
             turn_num: 1,
             action_num: 0,
             // Keep track of messages from actions/debug this frame
-            action_strs: Vec::new()
+            action_strs: Vec::new(),
+            turn_complete: false
         }
     }
 
@@ -357,6 +373,26 @@ impl<'battle> BattleState<'battle> {
             BattlePosition::B1 => self.b_poke1.as_ref(),
             BattlePosition::B2 => self.b_poke2.as_ref(),
         }
+    }
+
+    /// Fixed-order [F1, F2, B1, B2] view of the 4 active slots, always in sync with the fields.
+    fn get_all_active(&self) -> [Option<&ActivePokemon>; 4] {
+        [
+            self.f_poke1.as_ref(),
+            self.f_poke2.as_ref(),
+            self.b_poke1.as_ref(),
+            self.b_poke2.as_ref(),
+        ]
+    }
+
+    /// Mutable counterpart of [`BattleState::get_all_active`], same [F1, F2, B1, B2] order.
+    fn get_all_active_mut(&mut self) -> [Option<&mut ActivePokemon>; 4] {
+        [
+            self.f_poke1.as_mut(),
+            self.f_poke2.as_mut(),
+            self.b_poke1.as_mut(),
+            self.b_poke2.as_mut(),
+        ]
     }
 
     fn can_perform_stat(&self, stat_action:&StatAction) -> Vec<BattlePosition> {
@@ -597,7 +633,7 @@ impl<'battle> BattleState<'battle> {
             if [PokemonMoveName::Protect].contains(&move_name) {
                 source_act_poke.battle_status.set_flag(
                     PokemonBattleState::PROTECT
-                )
+                );
             }
             // TODO: Add non-generic protect
             
@@ -609,6 +645,86 @@ impl<'battle> BattleState<'battle> {
             acc));
 
         result_vec
+    }
+
+    /// Simulate a charge start-up and return a new Battle state
+    /// Can return true if the move is skipping charge
+    fn exec_charge_for_move(&mut self, move_action:&MoveAction) -> bool {
+
+        // let source_status = &source_act_pkmn.battle_status;
+        let source_poke = self.get_active(move_action.source).unwrap();
+        let bypass_charge ;
+
+        if !source_poke.battle_status.has_flag(PokemonBattleState::CHARGING) {
+            let b_actions;
+            (bypass_charge, b_actions) = self.gen_pre_charge_action(move_action);
+            let mut_poke = self.get_active_mut(move_action.source).unwrap();
+            if !bypass_charge { // add charging flag
+                mut_poke.battle_status.set_flag(PokemonBattleState::CHARGING);
+            }
+            
+            // Always sow 
+            let charge_msg = format_pkmn_message(
+                get_charge_message(move_action.pkm_move.name),
+                mut_poke, None);
+            self.action_strs.push(charge_msg);
+            // add actions & quit move early
+            for b_action in b_actions {
+                self.action_queue.push_front(b_action);
+            }
+        } else {
+            let mut_poke = self.get_active_mut(move_action.source).unwrap();
+            mut_poke.battle_status.clear_flag(
+                PokemonBattleState::CHARGING
+            ); // Clear charging state, no other event triggered
+            bypass_charge = true
+            // continue with the move eval
+        }
+
+        return bypass_charge;
+        
+
+
+        let source_act_pkmn = 
+            self.get_active_mut(move_action.source).expect("Source pkmn must exist");
+        
+        source_act_pkmn.battle_status.set_flag(PokemonBattleState::CHARGING);
+
+        // If Power-Herb, skip to next stage
+        // Or weather change
+        let message = match move_action.pkm_move.name {
+            PokemonMoveName::Solar_Beam => format!("{} absorbed sunlight!",
+                move_action.source),
+            _ => format!("{} is charging!", move_action.pkm_move.name) 
+        };
+
+        source_act_pkmn.last_move_used = Some(move_action.pkm_move.name);
+
+        // let mut act_strs = &mut self.action_strs;
+        self.action_strs.push(format!("{message}"));
+        false
+    }
+
+    fn gen_pre_charge_action(&self, move_action:&MoveAction) -> (bool, Vec<BattleAction<'battle>>) {
+
+        // let source_act_pkmn = 
+        //     self.get_active(move_action.source).expect("Source pkmn must exist");
+        
+        // Check if charge is bypassed by static effect
+        let bypass_charge = match move_action.pkm_move.name {
+            PokemonMoveName::Solar_Beam => self.weather == BattleWeatherState::SUN,
+            _ => false
+        };
+
+        if bypass_charge {
+            // evaluate the full move
+            return (true, vec![])
+            // TODO: Return pre-charge actions if needed
+        }
+
+        // TODO: if power herb, return a consume item action before the move
+
+        (false, vec![])
     }
 
     // Perform generic NULL(miss) case for all moves
@@ -667,7 +783,23 @@ impl<'battle> BattleState<'battle> {
 
     // Simulate a move hit and create states from this
     fn sim_move(&self, move_action: &MoveAction) -> Vec<BattleContainer<'battle>> {
+        
         let source_act_pkmn = self.get_active(move_action.source).expect("source must exist");
+
+        // Actions that always occur before actions
+        // let mut base_queue:Vec<BattleAction> = vec![];
+        // Always create a base clone
+        let mut base_clone = self.clone();
+
+        // TODO: Move to separate function probably
+        // If charging move, perform charge
+        if move_action.pkm_move.flags.has_flag(PokemonMoveFlag::CHARGING) {
+            let bypass_charge = base_clone.exec_charge_for_move(move_action);
+            if !bypass_charge {
+                return vec![BattleContainer::simple(base_clone, 
+                    PkmnRational::ONE())];
+            }
+        }
 
         let move_msg = format!("{} used {}!",
                         self.get_active(move_action.source).unwrap(), 
@@ -685,10 +817,11 @@ impl<'battle> BattleState<'battle> {
             }
         )
         .collect();
+        // List of actions per target
         let num_valid_targets = move_targets.len();
+        
         let mut result_queue:Vec<Vec<BattleAction>> = vec![];
 
-        // TODO: Make this pokemon specific (i.e BrightPowder)
         let move_acc = BattleState::calc_move_accuracy(move_action, source_act_pkmn);
 
         // Check valid targets on field and calc hit
@@ -697,7 +830,6 @@ impl<'battle> BattleState<'battle> {
             // Contains resulting actions from move hit
             let mut result_act_vec: Vec<BattleAction> = vec![];
             let def_poke = &target_act_pkmn.pokemon;
-
             
             if target_act_pkmn.battle_status.has_flag(PokemonBattleState::PROTECT) {
                 // TODO: BattleAction::Message() for hidden effects?
@@ -719,8 +851,10 @@ impl<'battle> BattleState<'battle> {
             if move_action.pkm_move.is_attack() {
                 println!("INT[{}/{}] Start damage calc for target {def_poke}",
                     self.turn_num, self.action_num);
+                
+                // TODO: Damage needs to be calculated on hit not before hit
                 let move_damage = BattleState::calc_move_damage(move_action, 
-                    num_valid_targets, source_act_pkmn, target_act_pkmn);
+                    num_valid_targets, source_act_pkmn, target_act_pkmn, self);
 
                 let bat_pos = **target_pos;
                 // TODO: Some moves my do more than just damage
@@ -789,21 +923,6 @@ impl<'battle> BattleState<'battle> {
             
         }
 
-        // let mut base_clone = self.clone();
-        // let null_case:Option<Fn<BattleState, BattlePosition>> = None;
-
-        // Increment protect counter if protect counter move
-        // move to protect phase
-        // FIXME: Its frustating to clone it's really part of the accuracy check
-        // Also need to think about moves that have failure/miss conditions
-        // let source_2_pkmn =  base_clone.get_active_mut(move_action.source).expect("source must exist");
-        // if move_action.pkm_move.flags.has_flag(PROTECT_COUNTER) {
-        //     source_2_pkmn.consec_protect_count += 1;
-        // } else {
-        //     source_2_pkmn.consec_protect_count = 0;
-        // }
-
-
         let prob_set = gen_power_set(
             vec![move_acc; num_valid_targets]);
 
@@ -871,7 +990,8 @@ impl<'battle> BattleState<'battle> {
 
     fn calc_move_damage(move_action: &MoveAction,
         num_valid_targets:usize, 
-        atk_poke:&ActivePokemon, def_poke:&ActivePokemon) -> i32 {
+        atk_poke:&ActivePokemon, def_poke:&ActivePokemon,
+        battle_state:&BattleState) -> i32 {
 
             // Would like to cache this but base_power on weight or Foul Play
             // Requires more thought
@@ -882,7 +1002,11 @@ impl<'battle> BattleState<'battle> {
                 _ => 1
             };
 
-            let base_power = move_action.pkm_move.power;
+            let mut base_power = move_action.pkm_move.power;
+            // TODO: Add custom power flag 
+            if move_action.pkm_move.flags.has_flag(PokemonMoveFlag::WEATHER_MODIFY) {
+                base_power = battle_state.calc_custom_base_power(move_action);
+            }
 
             let def_stat = match &move_action.pkm_move.category {
                 Physical => def_poke.get_active_stat(PokemonStatName::DEFENSE),
@@ -891,6 +1015,9 @@ impl<'battle> BattleState<'battle> {
             };
 
             let move_type = move_action.pkm_move.r#type;
+            // TODO Custom type flag, edit move action
+            // if move_action.pkm_move.flags.has_flag(PokemonMoveFlag::CUSTOM_TYPE)
+
             let base_damage = pkmn_damage_formula(base_power, atk_stat, def_stat);
 
             // ------------
@@ -905,6 +1032,7 @@ impl<'battle> BattleState<'battle> {
             // Parental Bond check (0.25 if duplicate strike)
 
             // Weather multiplier x1.5 or x0.5
+            
             // GlaiveRush x2
             // Critical hit x1.5
             // Random factor [x85, x100] then /100
@@ -943,7 +1071,30 @@ impl<'battle> BattleState<'battle> {
             calc_dmg
         }
 
-    ///
+
+    /// Return base power value
+    fn calc_custom_base_power(&self, move_action: &MoveAction) -> i32 {
+        match move_action.pkm_move.name {
+            // TODO: Data based script?
+            PokemonMoveName::Solar_Beam => {
+                if ![BattleWeatherState::NONE, BattleWeatherState::SUN].contains(&self.weather) {
+                    return 60 //
+                }
+                return 120
+            },
+            PokemonMoveName::Weather_Ball => {
+                if self.weather == BattleWeatherState::NONE {
+                    return 50
+                } else {
+                    return 100
+                }
+            }
+            _ => 1
+        }
+    }
+
+
+    /// calculate non-target pokemon accuracy
     fn calc_move_accuracy(move_action: &MoveAction, 
         source_act_pkmn:&ActivePokemon) -> PkmnRational {
         
@@ -1229,6 +1380,33 @@ impl<'battle> BattleState<'battle> {
         // For each state, the internal state will create a clone and modify that state to return
 
         
+    }
+
+
+    /// Resolve end of turn effects, set flag for turn complete
+    pub fn mark_end_of_turn(&mut self) -> &mut Self {
+        
+        // TODO: Effect order
+        // Weather effect
+        // Terrain
+        // Future-Sight/Wish/Etc
+        // Binding damage
+        // Perish Song
+        // Items/Abilities (speed order)
+
+        // TODO: Go through all abilties & etc to resolve end of turn stuff
+
+        for poke in self.get_all_active_mut() {
+            let Some(act_poke) = poke else { continue };
+            
+            // clear volatile flags
+            act_poke.battle_status.clear_flag(PokemonBattleState::FLINCHING)
+            .clear_flag(PokemonBattleState::PROTECT);
+        }
+
+        // Mark turn is complete
+        self.turn_complete = true;
+        self
     }
 
     /// Convert a PreAction to a BattleAction
