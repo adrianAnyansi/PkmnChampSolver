@@ -3,7 +3,8 @@ use crate::battle::data::{ActivePokemon, BattleWeatherState};
 use crate::battle::{BattleAction, BattlePosition, BattleState};
 use crate::math::PkmnRational;
 use crate::pokemon::PokemonName;
-use crate::pokemon::moves::{get_move, PokemonMoveName};
+use crate::pokemon::moves::{get_move, get_weather_modify_move, PokemonMoveName};
+use crate::pokemon::types::PokemonType;
 
 fn dummy_bc<'battle>() -> BattleContainer<'battle> {
     let garchomp = ActivePokemon::quick(PokemonName::Garchomp);
@@ -153,4 +154,24 @@ fn test_protect_blocks_will_o_wisp_no_miss() {
         future_actions.iter().all(|action| !matches!(action, BattleAction::Status(_))),
         "Protect should block Will-o-Wisp status targeting Garchomp"
     );
+}
+
+#[test]
+fn test_weather_ball_power_and_type_by_weather() {
+    let none_weather_ball = get_weather_modify_move(BattleWeatherState::NONE, PokemonMoveName::Weather_Ball);
+    assert_eq!(none_weather_ball.power, 50, "Weather Ball should be 50 BP with no weather");
+    assert_eq!(none_weather_ball.r#type, PokemonType::NORMAL, "Weather Ball should stay Normal with no weather");
+
+    let weather_cases = vec![
+        (BattleWeatherState::SUN, PokemonType::FIRE),
+        (BattleWeatherState::RAIN, PokemonType::WATER),
+        (BattleWeatherState::SNOW, PokemonType::ICE),
+        (BattleWeatherState::SANDSTORM, PokemonType::ROCK),
+    ];
+
+    for (weather, expected_type) in weather_cases {
+        let weather_ball = get_weather_modify_move(weather, PokemonMoveName::Weather_Ball);
+        assert_eq!(weather_ball.power, 100);
+        assert_eq!(weather_ball.r#type, expected_type);
+    }
 }

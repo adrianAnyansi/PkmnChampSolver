@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::ActivePokemon, }, math::PkmnRational, pokemon::{moves::BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}}};
+use crate::{battle::{ BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, PokemonMoveCategory::Special, PokemonMoveName::{Solar_Beam, Weather_Ball}}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -375,7 +375,7 @@ pub enum PokemonMoveFlag {
     POWDER, // Powder moves are ignored by Grass, OverCoat & Safety Goggles
     SLICING, // Move boosted by Sharpness
     // PULSE, // Move boosted by Pulse (Mega Launcher)
-    // BALL_BOMB, // Blocked by Bullet Proof
+    BALLISTIC, // Blocked by Bullet Proof
     // BITING, // Strong Jaw
     // PUNCHING, // Iron Fist & Punching Glove
     SOUND, // Throat Chop, Throat Spray and etc
@@ -555,8 +555,8 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Weather_Ball => PokemonMove::new(
             pkmn_move_name, NORMAL, Special
         ).set_attr(60, 1.0, OPPONENT)
-        .add_dummy_flag("weather_boost")
-        .add_dummy_flag("custom_power"),
+        .add_flag(PokemonMoveFlag::BALLISTIC)
+        .add_flag(PokemonMoveFlag::WEATHER_MODIFY),
         
         PokemonMoveName::Protect => PokemonMove::status(
             pkmn_move_name, NORMAL, SELF
@@ -716,3 +716,30 @@ pub fn format_pkmn_message(message_template:String,
         .replace("{source_poke}", &source_poke.to_string())
         .replace("{dest_poke}", &dest_poke.map_or("dest_poke".to_string(), |p| p.to_string()))
     }
+
+/// Return moves modified by weather
+pub fn get_weather_modify_move(weather:BattleWeatherState, move_name:PokemonMoveName) -> PokemonMove {
+    use crate::battle::data::BattleWeatherState::*;
+    match move_name {
+        Weather_Ball => {
+            let mut base_weather_ball = get_move(move_name);
+            base_weather_ball.power = 100;
+            match weather {
+                SUN => base_weather_ball.r#type = PokemonType::FIRE,
+                RAIN => base_weather_ball.r#type = PokemonType::WATER,
+                SNOW  => base_weather_ball.r#type = PokemonType::ICE,
+                SANDSTORM => base_weather_ball.r#type = PokemonType::ROCK,
+                _ => base_weather_ball.power = 50,
+            }
+            base_weather_ball
+        },
+        Solar_Beam => {
+            let mut base_move = get_move(move_name);
+            if ![BattleWeatherState::NONE, BattleWeatherState::SUN].contains(&weather) {
+                base_move.power = 60;
+            }
+            base_move
+        },
+        _ => panic!("Not implemented move for weather modify")
+    }
+}

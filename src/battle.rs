@@ -14,7 +14,7 @@ pub mod data;
 use crate::battle;
 use crate::battle::data::{ActivePokemon, BattleWeatherState, PokemonBattleState, PokemonStatus};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, PROTECT, PROTECT_ACC, PROTECT_COUNTER};
-use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_move};
+use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_move, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
@@ -782,7 +782,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     // Simulate a move hit and create states from this
-    fn sim_move(&self, move_action: &MoveAction) -> Vec<BattleContainer<'battle>> {
+    fn sim_move(&self, move_action: &mut MoveAction) -> Vec<BattleContainer<'battle>> {
         
         let source_act_pkmn = self.get_active(move_action.source).expect("source must exist");
 
@@ -817,6 +817,7 @@ impl<'battle> BattleState<'battle> {
             }
         )
         .collect();
+
         // List of actions per target
         let num_valid_targets = move_targets.len();
         
@@ -847,13 +848,14 @@ impl<'battle> BattleState<'battle> {
             }
 
             // TODO: Calculate crit, including status and etc effects
+            let mut active_move = move_action.pkm_move.clone();
 
             if move_action.pkm_move.is_attack() {
                 println!("INT[{}/{}] Start damage calc for target {def_poke}",
                     self.turn_num, self.action_num);
                 
                 // TODO: Damage needs to be calculated on hit not before hit
-                let move_damage = BattleState::calc_move_damage(move_action, 
+                let move_damage = BattleState::calc_move_damage(&mut active_move, 
                     num_valid_targets, source_act_pkmn, target_act_pkmn, self);
 
                 let bat_pos = **target_pos;
@@ -878,7 +880,7 @@ impl<'battle> BattleState<'battle> {
             use crate::pokemon::moves::MoveEffect;
             // TODO: Most vec will go unused, look for better logic
             // generate on hit effects to the action queue
-            for hit_action in &move_action.pkm_move.hit_actions {
+            for hit_action in &active_move.hit_actions {
 
                 // TODO: All move_effects should contain targetting and pct_chance
                 // So the battle_action conversion is generic
@@ -893,7 +895,7 @@ impl<'battle> BattleState<'battle> {
                             stat_target_pos))
                         },
                     MoveEffect::General(BattleEffect::Protect, target, rat) => {
-                        Some(BattleAction::Protect(move_action.pkm_move.name, 
+                        Some(BattleAction::Protect(active_move.name, 
                                 move_action.source, move_acc))
                     },
                     MoveEffect::Status(_, target, _rat) |
@@ -988,7 +990,7 @@ impl<'battle> BattleState<'battle> {
         return base_power
     }
 
-    fn calc_move_damage(move_action: &MoveAction,
+    fn calc_move_damage(pkm_move: &mut PokemonMove,
         num_valid_targets:usize, 
         atk_poke:&ActivePokemon, def_poke:&ActivePokemon,
         battle_state:&BattleState) -> i32 {
@@ -996,29 +998,31 @@ impl<'battle> BattleState<'battle> {
             // Would like to cache this but base_power on weight or Foul Play
             // Requires more thought
 
-            let atk_stat = match move_action.pkm_move.category {
+            let atk_stat = match pkm_move.category {
                 Physical => atk_poke.get_active_stat(PokemonStatName::ATTACK),
                 Special => atk_poke.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
                 _ => 1
             };
 
-            let mut base_power = move_action.pkm_move.power;
+            let mut effective_move = pkm_move.clone();
             // TODO: Add custom power flag 
-            if move_action.pkm_move.flags.has_flag(PokemonMoveFlag::WEATHER_MODIFY) {
-                base_power = battle_state.calc_custom_base_power(move_action);
+            if pkm_move.flags.has_flag(PokemonMoveFlag::WEATHER_MODIFY) {
+                effective_move = get_weather_modify_move(battle_state.weather, pkm_move.name);
+                // base_power = battle_state.calc_custom_base_power(move_action);
             }
+            // let base_power = effective_move.power;
 
-            let def_stat = match &move_action.pkm_move.category {
+            let def_stat = match &effective_move.category {
                 Physical => def_poke.get_active_stat(PokemonStatName::DEFENSE),
                 Special => def_poke.get_active_stat(PokemonStatName::SPECIAL_DEFENSE),
-                _ => 1
+                _ => panic!("Non attacking move in damage calculation")
             };
 
-            let move_type = move_action.pkm_move.r#type;
+            let move_type = effective_move.r#type;
             // TODO Custom type flag, edit move action
             // if move_action.pkm_move.flags.has_flag(PokemonMoveFlag::CUSTOM_TYPE)
 
-            let base_damage = pkmn_damage_formula(base_power, atk_stat, def_stat);
+            let base_damage = pkmn_damage_formula(effective_move.power, atk_stat, def_stat);
 
             // ------------
             
@@ -1092,7 +1096,6 @@ impl<'battle> BattleState<'battle> {
             _ => 1
         }
     }
-
 
     /// calculate non-target pokemon accuracy
     fn calc_move_accuracy(move_action: &MoveAction, 
@@ -1344,12 +1347,11 @@ impl<'battle> BattleState<'battle> {
                     // Return bc with failed state
                     return vec![];
                 }
-                // TODO: Check abilities & etc with field to edit move if needed
-                // println!("{} used {}!",
-                //         self.get_active(move_action.source).unwrap(), 
-                //         move_action.pkm_move.name);
                 
-                return self.sim_move(&move_action)
+                // TODO: Check abilities & etc with field to edit move if needed
+                
+                // NOTE: Cloning as move may need modification
+                return self.sim_move(&mut move_action.clone())
             },
             BattleAction::Stat(mut stat_actions) => {
                 for stat_action in stat_actions {
