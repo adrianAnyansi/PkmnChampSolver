@@ -13,7 +13,11 @@ pub enum PokemonBattleState {
     /// Pokemon is flinching and cannot act this turn
     FLINCHING,
     /// Pokemon is charging for next turn
-    CHARGING
+    CHARGING,
+    /// Confused state
+    CONFUSED,
+    /// Infatuation (in love) state
+    INFATUATION
 }
 
 impl BitFlagValue128 for PokemonBattleState {
@@ -95,9 +99,16 @@ pub struct ActivePokemon {
     pub consec_protect_count: u8,
     /// pointer to keep track of last move executed
     pub last_move_used: Option<PokemonMoveName>,
+    /// Keep track if previous move failed
+    pub last_move_failed: bool,
     pub forced_move: Option<PokemonMoveName>,
+    /// All status 
     pub battle_status: PokemonBitFlag128<PokemonBattleState>,
+    /// Confusion counter
+    pub confusion_count: u8,
 }
+
+// TODO: Create a separate TrainedPokemon which contains stats + natures?
 
 // TODO: Currently I'm moving the struct instead of referencing
 // I don't want multiple structs of base pokemon but it's hard to 
@@ -124,9 +135,11 @@ impl ActivePokemon {
                 turns_active: 0, // first turn effect counter
                 consec_protect_count: 0,
                 last_move_used: None,
+                last_move_failed: false,
                 forced_move: None,
                 // in_battle_flags: HashMap::new(), // Keep track of various flags
                 battle_status: PokemonBitFlag128::<PokemonBattleState>::empty(),
+                confusion_count: 0,
             }
     }
 

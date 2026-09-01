@@ -1,25 +1,20 @@
-# TODO
+# TODO (Overview)
 Just moves from 2 teams, just 2 teams focus
 
 I need to finish all the moves, and I need better testing cause I'm worrying things won't work correctly-
 
-Collapse works, going to think about the teams and move choice later, still mechanics I'm missing
+## Today
+Flinching (add state, check start of turn, then etc)
+Then Rock Slide is done
+Onto Stomping Tantrum
 
-## Todo
-damage calc is still invalid on lower end*
-    - might need a better way to do this
-Then speed / priority calculations
-Then implementing teams, switch/faint effects and draft selection stuff?
+## Current Thoughts
 
-## Thoughts
 
-With messages on battle state, event can be made, but later
-
- ---
- After all actions are done, turn end is inited, do a co routine where end-of-turn actions occur
- Going to set a flag so code doesn't accidentally skip turns without checking things
- I want a volatile "battle state" to clear, i mean well technically there is no internal pokemon state outside HP (so far)
-
+## Future todos and cleanup
+- damage calc is invalid on lower end, review
+- speed / priority (going to use a [priority, speed, action] queue)
+- team implementation, switch/faint
 
 
 ## Today

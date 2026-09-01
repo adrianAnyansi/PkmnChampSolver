@@ -12,6 +12,7 @@ pub mod data;
 
 
 use crate::battle;
+use crate::battle::BattleEffect::Flinch;
 use crate::battle::data::{ActivePokemon, BattleWeatherState, PokemonBattleState, PokemonStatus};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, PROTECT, PROTECT_ACC, PROTECT_COUNTER};
 use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_move, get_weather_modify_move};
@@ -52,19 +53,28 @@ pub enum BattleAction<'battle> {
     Status(StatusAction),
     /// Stat modifier change being enacted by move or effect
     Stat(Vec<StatAction>),
-    AbilityAction, // Ability 
+    /// Volatile status effect
+    VolatileStatus(BattlePosition, PokemonBattleState, PkmnRational),
+    /// Ability effect
+    AbilityAction, 
     /// Pokemon took damage from any source
     Damage(DamageEffect),
+    /// Pokemon is fainting
     Faint(BattlePosition),
     /// Protect state
     Protect(PokemonMoveName, BattlePosition, PkmnRational), 
     /// Add this message to the battle state, no action
     Message(String),
+
     HitAction(MoveAction<'battle>, String),
     /// Set flag on active pokemon, <position, state, set>
     SetFlag(BattlePosition, PokemonBattleState, bool),
     /// Force pokemon to use move
-    ForceMove(BattlePosition, PokemonMoveName)
+    ForceMove(BattlePosition, PokemonMoveName),
+    
+    // TODO: Transition stat/status/protect to this version
+    /// Subset to contain % action effects, no miss case
+    PctAction(BattlePctAction, BattlePosition, PkmnRational)
 }
 
 impl core::fmt::Display for BattleAction<'_> {
@@ -84,6 +94,15 @@ impl core::fmt::Display for BattleAction<'_> {
         }
     }
 }
+
+/// Subset of BattleAction with actions that typically have % of occurring
+#[derive(Clone)]
+pub enum BattlePctAction {
+    Stat(StatAction),
+    Status(PokemonStatus),
+    AddFlag(PokemonBattleState, bool)
+}
+
 
 /// The selected position on the battlefield
 #[derive(Clone, Copy, Debug)]
@@ -428,14 +447,22 @@ impl<'battle> BattleState<'battle> {
 
         }
 
-    fn can_perform_move(&self, pkm_move:&PokemonMove, move_action: &MoveAction  ) -> bool {
+    fn can_perform_move(&self, pkm_move:&PokemonMove, move_action: &MoveAction  ) -> (bool, String) {
         // check move conditions
         if !pkm_move.intn_condition_check(
             self, move_action) {
-            return false;
+            return (false, "But it failed!".to_string());
         }
 
-        true
+        let source_poke = self.get_active(move_action.source);
+        if let Some(source_act_poke) = source_poke {
+
+            if source_act_poke.battle_status.has_flag(PokemonBattleState::FLINCHING) {
+                return (false, format!("{source_act_poke} flinched!")) // skip flinching, add message
+            }
+        }
+
+        (true, "".to_string())
     }
 
     /// Mutate the battle state
@@ -587,7 +614,7 @@ impl<'battle> BattleState<'battle> {
                     stat_msg.push_str(&format!("{} avoided the stat change!", target_poke));
                     continue
                 }
-                clone_state.perform_stat_change(*target_pos, &stat_action);
+                clone_state.exec_stat_change(*target_pos, &stat_action);
                 let target_poke = clone_state.get_active(*target_pos).unwrap();
                 stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.pokemon, 
                     stat_action.stat_name, 
@@ -602,6 +629,37 @@ impl<'battle> BattleState<'battle> {
 
         result_vecs
         
+    }
+
+    /// Simulate a volatile status being applied
+    fn sim_vol_status(&self, vol_status:PokemonBattleState, b_position:BattlePosition, acc:PkmnRational) -> Vec<BattleContainer<'battle>> {
+
+        let mut result_vec:Vec<BattleContainer> = vec![];
+        // TODO: check item/ability/field effects for volatile status block/change
+
+        let mut b_clone = self.clone();
+        let target_poke = b_clone.get_active_mut(b_position);
+
+        if let Some(target_act_poke) = target_poke {
+            // set volatile status
+            target_act_poke.battle_status.set_flag(vol_status);
+            
+
+            let msg = match vol_status {
+                PokemonBattleState::FLINCHING => format!("{target_act_poke} flinched!"), // flinch is not shown until attacking
+                PokemonBattleState::CONFUSED => format!("{target_act_poke} is confused!"),
+                PokemonBattleState::INFATUATION => format!("{target_act_poke} is in love!"),
+                _ => panic!("Invalid volatile status")
+            };
+            if msg != "" {
+                b_clone.action_strs.push(msg);
+            }
+
+            result_vec.push(BattleContainer::simple(b_clone, acc));
+        }
+        // TODO: Review if I can have a non-ONE containers ( i cant )
+
+        result_vec
     }
 
     /// Simulate a pokemon protecting
@@ -818,6 +876,8 @@ impl<'battle> BattleState<'battle> {
         )
         .collect();
 
+        // TODO: Set last_move_failed as false
+
         // List of actions per target
         let num_valid_targets = move_targets.len();
         
@@ -898,13 +958,18 @@ impl<'battle> BattleState<'battle> {
                         Some(BattleAction::Protect(active_move.name, 
                                 move_action.source, move_acc))
                     },
+                    MoveEffect::General(BattleEffect::Flinch, target, rat) => {
+                        let f_target_pos = BattleState::convert_effect_target_to_position(
+                            *target, move_action.source, Some(**target_pos));
+                        Some(BattleAction::PctAction(
+                            BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true), 
+                                f_target_pos, *rat))
+                        // Some(BattleAction::VolatileStatus(f_target_pos, 
+                        //         PokemonBattleState::FLINCHING, *rat))
+                    }
                     MoveEffect::Status(_, target, _rat) |
                     MoveEffect::General(_, target, _rat) => {
 
-                        // if hit_action == BattleEffect::Protect {
-                        //     return BattleAction::Protect(move_action.pkm_move, 
-                        //         move_action.source, move_acc)
-                        // }
                         let status_target_pos = BattleState::convert_effect_target_to_position(
                             *target, move_action.source, Some(**target_pos));
                         
@@ -1154,9 +1219,9 @@ impl<'battle> BattleState<'battle> {
     
     // TODO: Complete this later, its important
     fn spawn_bcs_for_power_set<F> (self, prob_set:&[PkmnRational], 
-        mut apply_func:F)
+        mut apply_func:F, mut fail_func:F)
         where
-            F: FnMut(&mut BattleState<'battle>),
+            F: FnMut(&mut BattleState<'battle>, i32),
          {
 
         let mut result_bcs = vec![];
@@ -1168,7 +1233,7 @@ impl<'battle> BattleState<'battle> {
             let mut int_clone = self.clone();
             for (idx,target_pos) in valid_targets.iter().enumerate() {
                 if (bin_comb >> idx) & 0b1 == 1 {
-                    apply_func(&mut int_clone);
+                    apply_func(&mut int_clone, bin_comb as i32);
                     // int_clone.perform_stat_change(*target_pos, &stat_action);
                 }
             }
@@ -1179,7 +1244,7 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
-    fn perform_stat_change(&mut self, target_pos:BattlePosition, stat_action: &StatAction) {
+    fn exec_stat_change(&mut self, target_pos:BattlePosition, stat_action: &StatAction) {
         let target_poke = self.get_active_mut(target_pos);
         let target_act_pkmn = target_poke.expect("Non-null");
     
@@ -1219,8 +1284,8 @@ impl<'battle> BattleState<'battle> {
                 return
             }
 
-        // Check ability prevention
-        // Check field & etc prevention
+        // TODO: Check ability prevention
+        // TODO: Check field & etc prevention
 
         if target_act_poke.status != PokemonStatus::NONE {
             target_act_poke.status = status_action.status
@@ -1307,9 +1372,9 @@ impl<'battle> BattleState<'battle> {
 
             match action {
                 BattleAction::Move(mut move_action) => {
-                    if !self.can_perform_move(&move_action.pkm_move, &move_action) {
-                        continue
-                    };
+                    // if !self.can_perform_move(&move_action.pkm_move, &move_action) {
+                    //     continue
+                    // };
                     println!("{} used {}!",
                         self.get_active_mut(move_action.source).unwrap(), 
                         move_action.pkm_move.name);
@@ -1342,8 +1407,11 @@ impl<'battle> BattleState<'battle> {
 
         match action {
             BattleAction::Move(move_action) => {
-                if !self.can_perform_move(&move_action.pkm_move, &move_action) {
-                    // TODO: set move as failed
+                let (can_perform, fail_message) = self.can_perform_move(&move_action.pkm_move, &move_action);
+                if !can_perform {
+                    self.action_strs.push(fail_message);
+                    let source_act_poke = self.get_active_mut(move_action.source).unwrap();
+                    source_act_poke.last_move_failed = true;
                     // Return bc with failed state
                     return vec![];
                 }
@@ -1369,6 +1437,19 @@ impl<'battle> BattleState<'battle> {
             BattleAction::Protect(move_name, position, accuracy ) => {
                 // Check the protect_counter in the function
                 return self.sim_protect(move_name, position, accuracy);
+            }
+            BattleAction::PctAction(action, position , accuracy ) => {
+                // NOTE: Should be used for no miss cases
+                match action {
+                    BattlePctAction::AddFlag(flag, set_value) => {
+                        let vol_status = flag;
+                        return self.sim_vol_status(vol_status, position, accuracy)
+                    },
+                    _ => panic!("Not yet implemented")
+                }
+            }
+            BattleAction::VolatileStatus(position, vol_status, accuracy) => {
+                return self.sim_vol_status(vol_status, position, accuracy)
             }
             _ => {
                     println!("Not yet implemented {action}")
@@ -1471,7 +1552,7 @@ impl<'battle> BattleState<'battle> {
             MoveEffect::General(battle_effect, target, rat ) => {
                 match battle_effect {
                     // TODO: Think about this
-                    // BattleEffect::Flinch => BattleAction::Faint(target),
+                    // BattleEffect::Flinch => BattleAction::SetFlag(target, (), ()),
                     _ => panic!("BattleEffect {:?} is not implemented, ignoring", battle_effect)
                 }
             },

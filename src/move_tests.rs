@@ -175,3 +175,45 @@ fn test_weather_ball_power_and_type_by_weather() {
         assert_eq!(weather_ball.r#type, expected_type);
     }
 }
+
+#[test]
+fn test_weather_ball_damage_boosts_and_changes_type_in_sun_with_dummy_bc() {
+    fn weather_ball_damage_in_weather(weather: BattleWeatherState) -> i32 {
+        let mut root_bc = dummy_bc();
+        let battle_state = root_bc.battle_state.as_mut().unwrap();
+        battle_state.weather = weather;
+
+        let weather_ball = get_move(PokemonMoveName::Weather_Ball);
+        let initial_hp = battle_state.f_poke1.as_ref().unwrap().current_hp;
+
+        BattleState::queue_move(
+            &mut battle_state.action_queue,
+            BattlePosition::B1,
+            &weather_ball,
+            vec![BattlePosition::F1],
+        );
+
+        root_bc.sim_next_action();
+        root_bc.sim_next_action();
+
+        let final_hp = root_bc
+            .battle_state
+            .as_ref()
+            .unwrap()
+            .f_poke1
+            .as_ref()
+            .unwrap()
+            .current_hp;
+
+        initial_hp - final_hp
+    }
+
+    let none_damage = weather_ball_damage_in_weather(BattleWeatherState::NONE);
+    let sun_damage = weather_ball_damage_in_weather(BattleWeatherState::SUN);
+
+    assert!(sun_damage > none_damage,
+        "Weather Ball should deal more damage in sun than with no weather");
+    // TODO: This test should explicitly check the damage on a neutral pokemon resistance
+    // or figure out a way to directly get moves before execution
+
+}
