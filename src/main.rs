@@ -7,8 +7,6 @@ mod battle;
 mod pokemon;
 mod math;
 
-#[cfg(test)]
-mod move_tests;
 
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::PokemonMoveName::{self};

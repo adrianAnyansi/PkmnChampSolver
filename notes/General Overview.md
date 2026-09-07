@@ -26,3 +26,7 @@ Here's how that will work-
 Any time the state would split, duplicate states are made with the pct-chance of that action. For that reason, all actions (move resolving, chance resolving, etc) returns a list of BattleStates, or rather a list of BattleContainers where the state can nest.
 
 If I just want to simulate a battle, the in-between resolver will roll the pct chances and resolve to just 1. For full-flow diagrams, each and every state gets simulated separately.
+
+In cases where there are multiple indepedent events (usually on multiple targets), it makes sense to spread (do multiple at once in an action) rather than in-sequence.
+
+Therefore I'm changing the logic for non-fail cases* to just return a battlestate instead of containers 

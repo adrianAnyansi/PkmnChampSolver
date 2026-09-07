@@ -8,12 +8,16 @@ use std::{collections::VecDeque};
 
 pub mod battle_processor;
 pub mod data;
+
+#[cfg(test)]
+#[path = "battle/tests/move_test.rs"]
+mod move_test;
 // use crate::batt
 
 
 use crate::battle;
 use crate::battle::BattleEffect::Flinch;
-use crate::battle::data::{ActivePokemon, BattleWeatherState, PokemonBattleState, PokemonStatus};
+use crate::battle::data::{ActivePokemon, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonStatus};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, PROTECT, PROTECT_ACC, PROTECT_COUNTER};
 use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_move, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
@@ -272,12 +276,14 @@ pub struct BattleState<'battle> {
     /// Current Weather
     pub weather: BattleWeatherState,
     /// active terrain (only 1) on the field
-    pub terrain: String,
-    pub effects: String,
-    pub room: String,
+    pub terrain: BattleTerrain,
+    /// Other effects not included yet
+    pub effects: i32,
+    /// Room moves (Trick, Wonder, Magic)
+    pub room: i32,
     /// This will contain the many per battle effects that don't fit neatly
     /// i.e Rage Fist, Disguise, etc.
-    pub internal_state: String,
+    pub internal_state: i32,
     // pub current_action: Option<String>,
     // NOTE: If speed/ability/etc order is hard to order, create a different queue
     pub action_queue: VecDeque<BattleAction<'battle>>,
@@ -286,6 +292,7 @@ pub struct BattleState<'battle> {
     /// Action number
     pub action_num: i32,
     /// Strings to display for actions
+    /// TODO: Move this out of battle state for easier cloning
     pub action_strs: Vec<String>,
     /// Bool flag when turn is complete
     pub turn_complete: bool
@@ -301,10 +308,10 @@ impl<'battle> BattleState<'battle> {
             b_poke2: None,
             // Will implement this properly later in the future idc rn
             weather: BattleWeatherState::NONE,
-            terrain: "None".to_string(),
-            effects: "None".to_string(),
-            room: "None".to_string(),
-            internal_state: "_".to_string(),
+            terrain: BattleTerrain::NONE,
+            effects: 0,
+            room: 0,
+            internal_state: 0,
             // current_action: None,
             action_queue: VecDeque::new(),
             turn_num: 1,
@@ -632,19 +639,18 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Simulate a volatile status being applied
-    fn sim_vol_status(&self, vol_status:PokemonBattleState, b_position:BattlePosition, acc:PkmnRational) -> Vec<BattleContainer<'battle>> {
+    fn exec_vol_status(&mut self, vol_status:PokemonBattleState, b_position:BattlePosition) {
 
-        let mut result_vec:Vec<BattleContainer> = vec![];
         // TODO: check item/ability/field effects for volatile status block/change
 
-        let mut b_clone = self.clone();
-        let target_poke = b_clone.get_active_mut(b_position);
+        // let mut b_clone = self;
+        // let mut b_clone = clone_state;
+        let target_poke = self.get_active_mut(b_position);
 
         if let Some(target_act_poke) = target_poke {
-            // set volatile status
+            // TODO: For CONFUSED/etc, set additional variables
             target_act_poke.battle_status.set_flag(vol_status);
             
-
             let msg = match vol_status {
                 PokemonBattleState::FLINCHING => format!("{target_act_poke} flinched!"), // flinch is not shown until attacking
                 PokemonBattleState::CONFUSED => format!("{target_act_poke} is confused!"),
@@ -652,14 +658,10 @@ impl<'battle> BattleState<'battle> {
                 _ => panic!("Invalid volatile status")
             };
             if msg != "" {
-                b_clone.action_strs.push(msg);
+                self.action_strs.push(msg);
             }
-
-            result_vec.push(BattleContainer::simple(b_clone, acc));
         }
-        // TODO: Review if I can have a non-ONE containers ( i cant )
-
-        result_vec
+        // b_clone
     }
 
     /// Simulate a pokemon protecting
@@ -743,24 +745,24 @@ impl<'battle> BattleState<'battle> {
         
 
 
-        let source_act_pkmn = 
-            self.get_active_mut(move_action.source).expect("Source pkmn must exist");
+        // let source_act_pkmn = 
+        //     self.get_active_mut(move_action.source).expect("Source pkmn must exist");
         
-        source_act_pkmn.battle_status.set_flag(PokemonBattleState::CHARGING);
+        // source_act_pkmn.battle_status.set_flag(PokemonBattleState::CHARGING);
 
-        // If Power-Herb, skip to next stage
-        // Or weather change
-        let message = match move_action.pkm_move.name {
-            PokemonMoveName::Solar_Beam => format!("{} absorbed sunlight!",
-                move_action.source),
-            _ => format!("{} is charging!", move_action.pkm_move.name) 
-        };
+        // // If Power-Herb, skip to next stage
+        // // Or weather change
+        // let message = match move_action.pkm_move.name {
+        //     PokemonMoveName::Solar_Beam => format!("{} absorbed sunlight!",
+        //         move_action.source),
+        //     _ => format!("{} is charging!", move_action.pkm_move.name) 
+        // };
 
-        source_act_pkmn.last_move_used = Some(move_action.pkm_move.name);
+        // source_act_pkmn.last_move_used = Some(move_action.pkm_move.name);
 
-        // let mut act_strs = &mut self.action_strs;
-        self.action_strs.push(format!("{message}"));
-        false
+        // // let mut act_strs = &mut self.action_strs;
+        // self.action_strs.push(format!("{message}"));
+        // false
     }
 
     fn gen_pre_charge_action(&self, move_action:&MoveAction) -> (bool, Vec<BattleAction<'battle>>) {
@@ -1219,7 +1221,8 @@ impl<'battle> BattleState<'battle> {
     
     // TODO: Complete this later, its important
     fn spawn_bcs_for_power_set<F> (self, prob_set:&[PkmnRational], 
-        mut apply_func:F, mut fail_func:F)
+        mut apply_func:F, mut fail_func:F) -> 
+        Vec<BattleContainer<'battle>>
         where
             F: FnMut(&mut BattleState<'battle>, i32),
          {
@@ -1242,6 +1245,31 @@ impl<'battle> BattleState<'battle> {
                 prob_set[bin_comb as usize])
             );
         }
+        result_bcs
+    }
+
+    /// Create 2 states, with 1 applying a simulation change
+    fn spawn_bc_for_single_prob<F> (&self, mut apply_func:F, prob:PkmnRational) 
+        -> Vec<BattleContainer<'battle>>
+        where F: FnMut(&mut BattleState<'battle>) 
+    {
+        let mut result_bcs = vec![];
+        if prob != PkmnRational::ZERO() {
+            let mut bs_clone = self.clone();
+            apply_func(&mut bs_clone); // apply change
+            result_bcs.push(
+                BattleContainer::simple(bs_clone, prob)
+            );
+        }
+
+        // NOTE: Cloning the unmodified state
+        if prob != PkmnRational::ONE() {
+            let base_bc = BattleContainer::simple(self.clone(), 
+                PkmnRational::ONE() - prob);
+            result_bcs.push(base_bc);
+        }
+
+        result_bcs
     }
 
     fn exec_stat_change(&mut self, target_pos:BattlePosition, stat_action: &StatAction) {
@@ -1438,19 +1466,22 @@ impl<'battle> BattleState<'battle> {
                 // Check the protect_counter in the function
                 return self.sim_protect(move_name, position, accuracy);
             }
-            BattleAction::PctAction(action, position , accuracy ) => {
+            BattleAction::PctAction(BattlePctAction::AddFlag(flag, set_value), position , accuracy ) => {
                 // NOTE: Should be used for no miss cases
-                match action {
-                    BattlePctAction::AddFlag(flag, set_value) => {
-                        let vol_status = flag;
-                        return self.sim_vol_status(vol_status, position, accuracy)
-                    },
-                    _ => panic!("Not yet implemented")
-                }
+                let vol_status = flag; // TODO: Check subset
+                let apply_func = |cloned_state:&mut BattleState| {
+                    cloned_state.exec_vol_status(vol_status, position)
+                };
+
+                return self.spawn_bc_for_single_prob(apply_func, accuracy);
+                // let result = self.spawn_bcs_for_power_set(prob_set, apply_func, apply_func);
+                // return BattleContainer::simple(battle_state, pct_chance)
+                // return BattleState::sim_vol_status(self, vol_status, position, accuracy);
+                    
             }
-            BattleAction::VolatileStatus(position, vol_status, accuracy) => {
-                return self.sim_vol_status(vol_status, position, accuracy)
-            }
+            // BattleAction::VolatileStatus(position, vol_status, accuracy) => {
+            //     return self.sim_vol_status(vol_status, position, accuracy)
+            // }
             _ => {
                     println!("Not yet implemented {action}")
             }
@@ -1785,6 +1816,26 @@ use crate::pokemon::moves::{get_move, PokemonMoveName};
         assert_eq!(new_bs.f_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(), 
             PokemonStatModifier::MINUS_5);
         
+    }
+
+    #[test]
+    fn test_pct_action_flinch () {
+        let mut root_bc = dummy_bc();
+        let bs = root_bc.battle_state.as_mut().unwrap();
+
+        bs.action_queue.push_back(BattleAction::PctAction(
+            BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true),
+            BattlePosition::F1,
+            PkmnRational::ONE(),
+        ));
+
+        root_bc.sim_next_action();
+
+        assert_eq!(root_bc.battle_ctns.len(), 0);
+        let new_bs = root_bc.battle_state.as_ref().unwrap();
+        assert_eq!(new_bs.action_queue.len(), 0);
+        assert!(new_bs.f_poke1.as_ref().unwrap().battle_status
+            .has_flag(PokemonBattleState::FLINCHING));
     }
 
 

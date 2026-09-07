@@ -1,3 +1,4 @@
+#![allow(non_camel_case_types)]
 // Continaing battle state info away from engine impl
 
 use strum_macros::{Display, EnumString};
@@ -263,4 +264,13 @@ pub enum BattleWeatherState {
     EXTREME_RAIN,
     /// Primal weather from Mega Rayquaza
     STRONG_WINDS
+}
+
+#[derive(Clone, Copy, EnumString, Display)]
+pub enum BattleTerrain {
+    NONE,
+    ELECTRIC,
+    GRASSY,
+    PSYCHIC,
+    MISTY
 }

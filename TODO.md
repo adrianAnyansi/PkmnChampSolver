@@ -9,6 +9,10 @@ Then Rock Slide is done
 Onto Stomping Tantrum
 
 ## Current Thoughts
+Thinking about the generic state stuff
+volatile status can work independently, so I can do just 0-1 state
+for multiple targets, i need the power_set for it to work correctly
+for multiple stats, this is never a case (at least as an AI says)
 
 
 ## Future todos and cleanup
