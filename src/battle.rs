@@ -15,11 +15,15 @@ mod move_test;
 // use crate::batt
 
 
+use strum_macros::EnumString;
+
 use crate::battle;
 use crate::battle::BattleEffect::Flinch;
+use crate::battle::DamageAfterEffect::Drain;
+use crate::battle::DamageSource::Ability;
 use crate::battle::data::{ActivePokemon, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonStatus};
-use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, PROTECT, PROTECT_ACC, PROTECT_COUNTER};
-use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_move, get_weather_modify_move};
+use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
+use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
@@ -109,7 +113,7 @@ pub enum BattlePctAction {
 
 
 /// The selected position on the battlefield
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BattlePosition {
     F1,
     F2,
@@ -225,8 +229,17 @@ pub struct DamageEffect {
     pub calc_damage: i32,
     // TODO: This needs to handle multiple things like Ability damage,
     // Whirlpool, regular moves, Status
-    pub damage_source: String 
+    pub damage_source: DamageSource,
+    pub dmg_after_effect: (BattlePosition, Option<(DamageAfterEffect, PkmnRational)>)
 }
+
+/// Used to calculate recoil or healing after
+#[derive(Clone, Copy)]
+pub enum DamageAfterEffect {
+    Recoil,
+    Drain
+}
+
 
 pub struct AddEffect {
     pub target: BattlePosition,
@@ -251,10 +264,26 @@ pub enum BattleEffect {
     Charging
 }
 
+#[derive(Clone, Copy)]
 pub enum DamageSource {
-    Move(PokemonMove),
+    Move(PokemonMoveName),
     Ability(PokemonAbilityName),
-    Status(PokemonStatus)
+    Status(PokemonStatus),
+    Recoil(PokemonMoveName),
+    Heal(PokemonMoveName)
+}
+
+impl std::fmt::Display for DamageSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DamageSource::Move(move_name)|
+            DamageSource::Recoil(move_name)|
+            DamageSource::Heal(move_name) => write!(f, "DamageSource({move_name})"),
+            DamageSource::Ability(ability_name) => write!(f, "DamageSource({ability_name})"),
+            DamageSource::Status(status_name) => write!(f, "DamageSource({status_name})")
+            
+        }
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -392,7 +421,7 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
-    fn get_active(&self, position: BattlePosition) -> Option<&ActivePokemon> {
+    pub fn get_active(&self, position: BattlePosition) -> Option<&ActivePokemon> {
         match position {
             BattlePosition::F1 => self.f_poke1.as_ref(),
             BattlePosition::F2 => self.f_poke2.as_ref(),
@@ -461,6 +490,9 @@ impl<'battle> BattleState<'battle> {
             return (false, "But it failed!".to_string());
         }
 
+        
+
+        // Field checks
         let source_poke = self.get_active(move_action.source);
         if let Some(source_act_poke) = source_poke {
 
@@ -540,9 +572,10 @@ impl<'battle> BattleState<'battle> {
             
             // Subtract health, then roll and apply secondary effects
             let dmg_effect = DamageEffect {
-                target: target_position.clone(),
+                target: *target_position,
                 calc_damage: calc_dmg,
-                damage_source: format!("{poke} took {calc_dmg} damage!")
+                damage_source: DamageSource::Move(move_action.pkm_move.name),
+                dmg_after_effect: (move_action.source, None)
             };
 
             // Create a damage effect that the Battle system can resolve
@@ -564,6 +597,26 @@ impl<'battle> BattleState<'battle> {
         }
 
         self
+    }
+
+    /// Get Recoil/Heal damage from effect
+    fn get_damage_after_effect(pkm_move:&PokemonMove) 
+        -> Option<(DamageAfterEffect, PkmnRational)> {
+        
+        use PokemonMoveFlag::*;
+        // recoil flags
+        if pkm_move.flags.has_flag(RECOIL_1_3RD) {
+            return Some((DamageAfterEffect::Recoil, PkmnRational::new(1, 3)))
+        } else if pkm_move.flags.has_flag(RECOIL_1_4TH) {
+            return Some((DamageAfterEffect::Recoil, PkmnRational::new(1, 4)))
+        }
+
+        if pkm_move.flags.has_flag(HEAL_1_2HF) {
+            return Some(
+                (DamageAfterEffect::Drain, PkmnRational::new(1, 2))
+            )
+        }
+        None
     }
 
     /// Perform stat modifier change for a single pokemon
@@ -795,7 +848,7 @@ impl<'battle> BattleState<'battle> {
         if let Some(source_act_pkmn) = source_pkmn {
 
             // Reset protect counter if miss/failed
-            if move_action.pkm_move.flags.has_flag(PROTECT_COUNTER) {
+            if move_action.pkm_move.flags.has_flag(INCRM_PROTECT_COUNTER) {
                 source_act_pkmn.consec_protect_count = 0;
             }
         }
@@ -842,8 +895,11 @@ impl<'battle> BattleState<'battle> {
     }
 
     // Simulate a move hit and create states from this
-    fn sim_move(&self, move_action: &mut MoveAction) -> Vec<BattleContainer<'battle>> {
-        
+    fn sim_move(&mut self, move_action: &mut MoveAction) -> Vec<BattleContainer<'battle>> {
+
+        let source_mut = self.get_active_mut(move_action.source);
+        source_mut.unwrap().turns_active += 1;
+
         let source_act_pkmn = self.get_active(move_action.source).expect("source must exist");
 
         // Actions that always occur before actions
@@ -921,13 +977,19 @@ impl<'battle> BattleState<'battle> {
                     num_valid_targets, source_act_pkmn, target_act_pkmn, self);
 
                 let bat_pos = **target_pos;
-                // TODO: Some moves my do more than just damage
-                // Also the damageEffect should not precalc here, this can change between multiple actions
+                // TODO: Some moves may do more than just damage
+                // This damage should be accurate pre-ability/etc modification
+                let dmg_after_effect = BattleState::get_damage_after_effect(move_action.pkm_move);
+                // if let Some((effect_type, modifier)) =  {
+                //     dmg_after_effect_source = Some((move_action.source, effect_type, modifier));
+                // }
+
                 // Trigger DamageEffect
                 let dmg_effect = DamageEffect {
                     target: bat_pos,
                     calc_damage: move_damage,
-                    damage_source: format!("{target_act_pkmn} took {move_damage} damage!")
+                    damage_source: DamageSource::Move(move_action.pkm_move.name),
+                    dmg_after_effect: (move_action.source, dmg_after_effect)
                 };
                 
                 result_act_vec.push(BattleAction::Damage(dmg_effect));
@@ -1076,6 +1138,9 @@ impl<'battle> BattleState<'battle> {
             if pkm_move.flags.has_flag(PokemonMoveFlag::WEATHER_MODIFY) {
                 effective_move = get_weather_modify_move(battle_state.weather, pkm_move.name);
                 // base_power = battle_state.calc_custom_base_power(move_action);
+            }
+            if pkm_move.flags.has_flag(PokemonMoveFlag::CUSTOM_POWER) {
+                effective_move = get_custom_base_power(battle_state, atk_poke, pkm_move.name);
             }
             // let base_power = effective_move.power;
 
@@ -1346,9 +1411,11 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
+    /// Simulate damage step, creating multiple universes if damage range
+    /// causes multiple effects
     fn sim_damage(&self, dmg_effect:DamageEffect) -> Vec<BattleContainer<'battle>> {
 
-        // TODO: Check if any abilities block/mitigate the damage
+        // TODO: Check if any abilities block/mitigate the damage, i.e disguise
         // NOTE: Might be bad to check here, lets assume damage is always accurate
 
         let mut cloned_state = self.clone();
@@ -1356,29 +1423,55 @@ impl<'battle> BattleState<'battle> {
         let target_pkmn = 
             cloned_state.get_active_mut(dmg_effect.target).unwrap();
 
-        
-        let curr_hp = target_pkmn.current_hp;
+        // let curr_hp = target_pkmn.current_hp;
+        let total_hp = target_pkmn.get_active_stat(HEALTH);
         // TODO: Any pre-damage takes (items, abilities, endure)
         let dmg_done = dmg_effect.calc_damage.min(target_pkmn.current_hp);
 
         target_pkmn.current_hp -= dmg_done;
+        let final_hp = target_pkmn.current_hp;
         
         let fainted = target_pkmn.current_hp == 0;
         let dmg_msg = format!("{target_pkmn} took {dmg_done} damage!");
-        // TODO: Think about how to calc this easily into ratio
-        // maybe compare ratio to threshold rational
-        let health_ratio =  target_pkmn.current_hp / target_pkmn.get_active_stat(HEALTH);
+        
         
         // If HP is 0, faint and perform fainting actions and ignore other effects
+        // NOTE: Faint needs to wait for after effects, so needs to be in its own queue
         if fainted {
             cloned_state.action_queue.push_front(
                 BattleAction::Faint(dmg_effect.target)
             );
         }
-        // Check pokemon/field for any faint effects
-
+        
         // Trigger any health effects (abilities, berries, etc)
+        // TODO: Think about how to calc this easily into ratio
+        // maybe compare ratio to threshold rational
+        let health_ratio =  final_hp / total_hp;
+
         // Trigger if recoil/recovery if move permits (or do within move)
+        if let (target, Some((effect_type, modifier))) = dmg_effect.dmg_after_effect {
+            let calc_damage = mult_and_round(dmg_done,  modifier.float());
+            // let move_name = dmg_effect.damage_source;
+
+            let after_effect = match effect_type {
+                battle::DamageAfterEffect::Recoil => DamageEffect {
+                    target,
+                    calc_damage,
+                    damage_source: DamageSource::Recoil(PokemonMoveName::Heat_Wave),
+                    dmg_after_effect: (target, None)
+                },
+                // TODO: Healing needs its own effect
+                Drain => DamageEffect {
+                    target,
+                    calc_damage,
+                    damage_source: DamageSource::Heal(PokemonMoveName::Heat_Wave),
+                    dmg_after_effect: (target, None)
+                }
+            };
+            cloned_state.action_queue.push_front(
+                BattleAction::Damage(after_effect));
+        }
+
         // TODO: currently create 1 BC, if ablities/items have % chance generate
         let mut bc = BattleContainer::simple(cloned_state, PkmnRational::ONE());
         bc.message = dmg_msg;
@@ -1439,9 +1532,9 @@ impl<'battle> BattleState<'battle> {
                 if !can_perform {
                     self.action_strs.push(fail_message);
                     let source_act_poke = self.get_active_mut(move_action.source).unwrap();
+                    // TODO: Certain effects do not set this, flinch does
                     source_act_poke.last_move_failed = true;
-                    // Return bc with failed state
-                    return vec![];
+                    return vec![BattleContainer::simple(self.clone(), PkmnRational::ONE())];
                 }
                 
                 // TODO: Check abilities & etc with field to edit move if needed

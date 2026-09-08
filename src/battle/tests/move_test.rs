@@ -1,11 +1,12 @@
 use crate::battle::battle_processor::BattleContainer;
 use crate::battle::data::{ActivePokemon, BattleWeatherState, PokemonBattleState};
-use crate::battle::{BattleAction, BattlePosition, BattleState};
+use crate::battle::{BattleAction, BattlePosition, BattleState, DamageAfterEffect, DamageSource};
 use crate::math::PkmnRational;
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::{get_move, get_weather_modify_move, PokemonMoveName};
 use crate::pokemon::types::PokemonType;
 
+/// Create a quick bc with Garchomp (B1) vs Tyranitar (F1)
 fn dummy_bc<'battle>() -> BattleContainer<'battle> {
     let garchomp = ActivePokemon::quick(PokemonName::Garchomp);
     let tyranitar = ActivePokemon::quick(PokemonName::Tyranitar);
@@ -86,19 +87,28 @@ fn test_rock_slide_flinches_before_heat_wave() {
     hit_bc.sim_next_action();
     hit_bc.sim_next_action();
 
-    let hit_state = hit_bc.battle_state.as_ref().unwrap();
-    assert!(hit_state.f_poke1.as_ref().unwrap().battle_status
-        .has_flag(PokemonBattleState::FLINCHING));
-    assert!(hit_state.action_strs.iter().any(|message| message == "Tyranitar flinched!"));
+    assert_eq!(hit_bc.battle_ctns.len(), 2);
+    let flinch_idx = hit_bc.battle_ctns.iter().position(|bc| {
+        bc.battle_state.as_ref().unwrap().b_poke1.as_ref().unwrap()
+            .battle_status.has_flag(PokemonBattleState::FLINCHING)
+    }).unwrap();
+    let flinch_bc = &mut hit_bc.battle_ctns[flinch_idx];
+    let hit_state = flinch_bc.battle_state.as_ref().unwrap();
+    assert!(hit_state.b_poke1.as_ref().unwrap().battle_status
+        .has_flag(PokemonBattleState::FLINCHING), "Pokemon should flinch in this universe");
+    assert!(hit_state.action_strs.iter().any(|message| message.contains("Garchomp")
+        && message.contains("flinched!")));
     assert!(hit_state.action_queue.iter().any(|action| matches!(action, BattleAction::Move(move_action)
         if move_action.pkm_move.name == PokemonMoveName::Heat_Wave)));
 
-    hit_bc.sim_next_action();
+    let tyranitar_hp = hit_state.f_poke1.as_ref().unwrap().current_hp;
+    flinch_bc.sim_next_action();
 
-    let hit_state = hit_bc.battle_state.as_ref().unwrap();
-    assert_eq!(hit_state.f_poke1.as_ref().unwrap().current_hp,
-        ActivePokemon::quick(PokemonName::Tyranitar).current_hp);
-    assert!(hit_state.action_queue.is_empty());
+    let post_heat_wave_state = flinch_bc.battle_state.as_ref().unwrap();
+    assert_eq!(post_heat_wave_state.f_poke1.as_ref().unwrap().current_hp, tyranitar_hp);
+    assert!(post_heat_wave_state.action_strs.iter().any(|message|
+        message.contains("Garchomp") && message.contains("flinched!")));
+    assert!(post_heat_wave_state.action_queue.is_empty());
 }
 
 #[test]
@@ -161,6 +171,52 @@ fn test_solar_beam_skips_charge_in_sun() {
 
     root_bc.sim_next_action();
     assert!(root_bc.battle_state.as_ref().unwrap().f_poke1.as_ref().unwrap().current_hp < initial_hp);
+}
+
+#[test]
+fn test_flare_blitz_queues_recoil_after_damage() {
+    let mut root_bc = dummy_bc();
+    let flare_blitz = get_move(PokemonMoveName::Flare_Blitz);
+
+    BattleState::queue_move(
+        &mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::B1,
+        &flare_blitz,
+        vec![BattlePosition::F1],
+    );
+
+    root_bc.sim_next_action();
+
+    let damage_action = root_bc
+        .battle_state
+        .as_ref()
+        .unwrap()
+        .action_queue
+        .front()
+        .expect("Flare Blitz should queue a damage action");
+    assert!(matches!(
+        damage_action,
+        BattleAction::Damage(effect)
+            if effect.target == BattlePosition::F1
+                && effect.dmg_after_effect.0 == BattlePosition::B1
+                && matches!(effect.dmg_after_effect.1, Some((DamageAfterEffect::Recoil, _)))
+    ));
+
+    root_bc.sim_next_action();
+
+    let recoil_action = root_bc
+        .battle_state
+        .as_ref()
+        .unwrap()
+        .action_queue
+        .front()
+        .expect("Flare Blitz damage should queue recoil");
+    assert!(matches!(
+        recoil_action,
+        BattleAction::Damage(effect)
+            if effect.target == BattlePosition::B1
+                && matches!(effect.damage_source, DamageSource::Recoil(_))
+    ));
 }
 
 

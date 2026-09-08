@@ -33,7 +33,7 @@ pub enum PokemonName {
 
 
 #[allow(non_camel_case_types)]
-#[derive(Deserialize, EnumString, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Deserialize, EnumString, Debug, Copy, Clone, Eq, PartialEq, Display)]
 pub enum PokemonAbilityName {
     Sand_Force,
     Rough_Skin,

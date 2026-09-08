@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, PokemonMoveCategory::Special, PokemonMoveName::{Solar_Beam, Weather_Ball}}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
+use crate::{battle::{ BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, PokemonMoveCategory::Special, PokemonMoveFlag::{CUSTOM_POWER, PRIORITY_3, RECOIL_1_3RD}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, Weather_Ball}}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -269,6 +269,10 @@ impl<'simulation> PokemonMove {
         match self.name {
             // perform move condition here
             // Draco_Meteor => move_action.
+            Fake_Out => {
+                let source = battle_state.get_active(move_action.source);
+                source.unwrap().turns_active == 0
+            }
             _ => return true
         }
     }
@@ -390,14 +394,24 @@ pub enum PokemonMoveFlag {
 
     PROTECT,    // Apply protect to this pokemon
     PROTECT_ACC, // Modify accuracy by consecutive protects if used
-    PROTECT_COUNTER, // Increment the protect counter if consecutive
+    INCRM_PROTECT_COUNTER, // Increment the protect counter if consecutive
 
+    /// Priority +1 move
     PRIORITY_1,
     PRIORITY_3,    
     PRIORITY_4,
     PRIORITY_MINUS_1,
+    PRIORITY_MINUS_6,
 
     IGNORE_ACC, // This move ignores accuracy checks
+
+    /// 1/3 recoil damage
+    RECOIL_1_3RD,
+    /// 1/4 recoil damage
+    RECOIL_1_4TH,
+
+    /// 1/2 healing drain
+    HEAL_1_2HF,
 }
 
 pub trait BitFlagValue128: Copy {
@@ -495,6 +509,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
     use PokemonType::*;
     use BattleTarget::*;
     use PokemonMoveName::*;
+    use PokemonMoveFlag::*;
 
     match pkmn_move_name {
         PokemonMoveName::Draco_Meteor => PokemonMove::new(
@@ -562,18 +577,16 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             pkmn_move_name, NORMAL, SELF
         ).set_attr(0, 1.0, SELF)
         .add_flag(PokemonMoveFlag::PROTECT)
-        .add_flag(PokemonMoveFlag::PROTECT_COUNTER)
+        .add_flag(PokemonMoveFlag::INCRM_PROTECT_COUNTER)
         .add_flag(PokemonMoveFlag::PROTECT_ACC)
         .add_flag(PokemonMoveFlag::PRIORITY_4)
         .add_generic(BattleEffect::Protect, BattleTarget::SELF, PkmnRational::ONE())
-        .add_dummy_flag("protect")
-        .add_dummy_flag("protect_stall")
         .add_dummy_flag("priority +4"),
 
         PokemonMoveName::Earthquake => PokemonMove::new(
             pkmn_move_name, GROUND, Physical
         ).set_attr(100, 1.0, ALL_EXCEPT_SELF)
-        .add_dummy_flag("dig_boost"),
+        .add_dummy_flag("boost damage against dig"),
         
         PokemonMoveName::Rock_Slide => PokemonMove::new(
             pkmn_move_name, ROCK, Physical
@@ -583,19 +596,22 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Stomping_Tantrum => PokemonMove::new(
             pkmn_move_name, GROUND, Physical
         ).set_attr(75, 1.0, OPPONENT)
-        .add_dummy_flag("boost_if_failed_last"),
+        .add_flag(CUSTOM_POWER),
 
         PokemonMoveName::Fake_Out => PokemonMove::new(
             pkmn_move_name, NORMAL, Physical
         ).set_attr(40, 1.0, OPPONENT)
         .add_flinch(PkmnRational::ONE())
-        .add_dummy_flag("custom_use"),
+        .add_flag(PRIORITY_3)
+        .add_dummy_flag("priority +3")
+        .add_dummy_flag("custom_use"), // Cant be selected in Champions after turn 1
         // TODO: Prevent use after turn 1
 
         PokemonMoveName::Flare_Blitz => PokemonMove::new(
             pkmn_move_name, FIRE, Physical
         ).set_attr(120, 1.0, OPPONENT)
         .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
+        .add_flag(RECOIL_1_3RD)
         .add_dummy_flag("recoil 1/3"),
 
 
@@ -651,7 +667,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
         .status_effect(PARALYZED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
         .status_effect(SLEEP, PkmnRational::pct(10), BattleTarget::OPPONENT,)
-        .add_dummy_flag("slicing").add_flag(PokemonMoveFlag::SLICING),
+        .add_flag(PokemonMoveFlag::SLICING),
         
         Swords_Dance => PokemonMove::status(
             pkmn_move_name, NORMAL, SELF)
@@ -743,3 +759,20 @@ pub fn get_weather_modify_move(weather:BattleWeatherState, move_name:PokemonMove
         _ => panic!("Not implemented move for weather modify")
     }
 }
+
+/// Get custom base_power based on current battle/etc
+pub fn get_custom_base_power(battle_state:&BattleState, source:&ActivePokemon, 
+    move_name:PokemonMoveName) -> PokemonMove {
+    match move_name {
+        Stomping_Tantrum => {
+            let mut base_move = get_move(move_name);
+            // let source_act_poke = battle_state.get_active(source);
+            if source.last_move_failed {
+                base_move.power = 140;
+            }
+            base_move
+        },
+        _ => panic!("Not implemented in custom_base_power")
+    }
+}
+

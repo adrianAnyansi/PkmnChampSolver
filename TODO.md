@@ -4,11 +4,27 @@ Just moves from 2 teams, just 2 teams focus
 I need to finish all the moves, and I need better testing cause I'm worrying things won't work correctly-
 
 ## Today
-Flinching (add state, check start of turn, then etc)
-Then Rock Slide is done
 Onto Stomping Tantrum
+    The test for this is annoying
+Fake Out
+    Still not implementing priority, just want the move to fail on not turn 1
+    Actually does
+
+## Moves to implement
+Fake Out - Flinch, turn 0
+Flare Blitz - Recoil after hit
+Throat Chop (add flag)
+Matcha Gotcha - Heal after hit
+Rage Powder - Center of attention
+Wide Guard - Special Protect
+Light Screen - room effect + damage calc
 
 ## Current Thoughts
+For fake out, I need to do the turns_active counter (which triggers abilities)
+    Slow Start, toxic, perish?
+    Natural Cure/Regenator only work if >0
+    Baton Pass (perserves this counter)
+
 Thinking about the generic state stuff
 volatile status can work independently, so I can do just 0-1 state
 for multiple targets, i need the power_set for it to work correctly
@@ -21,20 +37,7 @@ for multiple stats, this is never a case (at least as an AI says)
 - team implementation, switch/faint
 
 
-## Today
-
-Lets do turns.
-Then I'll do Solar Beam, and then Stomping logic
-
-Solar Beam can't be done cause I have no turn end for charging right now
-Stomping Tantrum next... failed move time, neat
-    This also requires turn end, ok lets just do this imo
-Then Fake Out - (speed priority)
-Throat Chop needs a data field for turns remaining
-Matcha Gotcha drain needed
-
 # Long Goal
-
 Need easier pokemon & move creation, going to make a central library to contain all
 Then more testing with spread moves
 Then I'll implment abilities
