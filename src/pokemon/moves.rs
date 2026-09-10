@@ -412,6 +412,9 @@ pub enum PokemonMoveFlag {
 
     /// 1/2 healing drain
     HEAL_1_2HF,
+
+    /// Move thaws source before doing anything
+    MOVE_THAW
 }
 
 pub trait BitFlagValue128: Copy {
@@ -563,9 +566,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             pkmn_move_name, GRASS, Special
         ).set_attr(120, 1.0, OPPONENT)
         .add_flag(PokemonMoveFlag::CHARGING)
-        .add_flag(PokemonMoveFlag::WEATHER_MODIFY)
-        .add_dummy_flag("weather_boost")
-        .add_dummy_flag("weather_charge"),
+        .add_flag(PokemonMoveFlag::WEATHER_MODIFY),
 
         PokemonMoveName::Weather_Ball => PokemonMove::new(
             pkmn_move_name, NORMAL, Special
@@ -604,15 +605,14 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         .add_flinch(PkmnRational::ONE())
         .add_flag(PRIORITY_3)
         .add_dummy_flag("priority +3")
-        .add_dummy_flag("custom_use"), // Cant be selected in Champions after turn 1
+        .add_dummy_flag("select restriction"), // Cant be selected in Champions after turn 1
         // TODO: Prevent use after turn 1
 
         PokemonMoveName::Flare_Blitz => PokemonMove::new(
             pkmn_move_name, FIRE, Physical
         ).set_attr(120, 1.0, OPPONENT)
         .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
-        .add_flag(RECOIL_1_3RD)
-        .add_dummy_flag("recoil 1/3"),
+        .add_flag(RECOIL_1_3RD),
 
 
         PokemonMoveName::Parting_Shot => PokemonMove::status(
@@ -645,7 +645,8 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         ).set_power(80).set_target(OPPONENT_ALL)
         .add_flag(HEAL_1_2HF)
         .status_effect(BURNED, PkmnRational::pct(20), BattleTarget::OPPONENT,)
-        .add_dummy_flag("recover 1/2"),
+        .add_flag(MOVE_THAW)
+        .add_dummy_flag("move thaw"),
 
         Rage_Powder => PokemonMove::status(
             pkmn_move_name, BUG, SELF
