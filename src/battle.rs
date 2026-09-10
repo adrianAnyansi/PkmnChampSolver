@@ -1,9 +1,6 @@
 // basic data for Pokemon battles
 #![allow(dead_code)]
 
-use std::clone;
-use std::collections::HashMap;
-use std::hash::Hash;
 use std::{collections::VecDeque};
 
 pub mod battle_processor;
@@ -12,15 +9,11 @@ pub mod data;
 #[cfg(test)]
 #[path = "battle/tests/move_test.rs"]
 mod move_test;
-// use crate::batt
 
 
-use strum_macros::EnumString;
 
 use crate::battle;
-use crate::battle::BattleEffect::Flinch;
 use crate::battle::DamageAfterEffect::Drain;
-use crate::battle::DamageSource::Ability;
 use crate::battle::data::{ActivePokemon, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonStatus};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
 use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
@@ -67,6 +60,9 @@ pub enum BattleAction<'battle> {
     AbilityAction, 
     /// Pokemon took damage from any source
     Damage(DamageEffect),
+    /// Healing
+    Heal(HealEffect),
+
     /// Pokemon is fainting
     Faint(BattlePosition),
     /// Protect state
@@ -233,10 +229,21 @@ pub struct DamageEffect {
     pub dmg_after_effect: (BattlePosition, Option<(DamageAfterEffect, PkmnRational)>)
 }
 
+/// Heal effect calculated from another move or effect
+#[derive(Clone, Copy)]
+pub struct HealEffect {
+    pub target: BattlePosition,
+    pub calc_healing: i32,
+    /// TODO: Re-using damage until this more details are needed
+    pub heal_source: DamageSource,
+}
+
 /// Used to calculate recoil or healing after
 #[derive(Clone, Copy)]
 pub enum DamageAfterEffect {
+    /// Recoil damage from moves
     Recoil,
+    /// Healing from moves
     Drain
 }
 
@@ -1453,23 +1460,25 @@ impl<'battle> BattleState<'battle> {
             let calc_damage = mult_and_round(dmg_done,  modifier.float());
             // let move_name = dmg_effect.damage_source;
 
-            let after_effect = match effect_type {
-                battle::DamageAfterEffect::Recoil => DamageEffect {
+            let battle_action = match effect_type {
+                battle::DamageAfterEffect::Recoil => {
+                    BattleAction::Damage( DamageEffect {
                     target,
                     calc_damage,
                     damage_source: DamageSource::Recoil(PokemonMoveName::Heat_Wave),
                     dmg_after_effect: (target, None)
+                    })
+                    
                 },
-                // TODO: Healing needs its own effect
-                Drain => DamageEffect {
-                    target,
-                    calc_damage,
-                    damage_source: DamageSource::Heal(PokemonMoveName::Heat_Wave),
-                    dmg_after_effect: (target, None)
+                Drain => {
+                    BattleAction::Heal( HealEffect {
+                        target,
+                        calc_healing: calc_damage,
+                        heal_source: DamageSource::Heal(PokemonMoveName::Heat_Wave),
+                    })
                 }
             };
-            cloned_state.action_queue.push_front(
-                BattleAction::Damage(after_effect));
+            cloned_state.action_queue.push_front(battle_action);
         }
 
         // TODO: currently create 1 BC, if ablities/items have % chance generate
@@ -1477,6 +1486,25 @@ impl<'battle> BattleState<'battle> {
         bc.message = dmg_msg;
 
         vec![bc]
+    }
+
+    fn sim_healing(&mut self, heal_effect:HealEffect) -> Vec<BattleContainer<'battle>> {
+
+        let target_pkmn = self.get_active_mut(heal_effect.target).unwrap();
+        
+        let total_hp = target_pkmn.get_active_stat(HEALTH);
+
+        // TODO: BIG ROOT or ability check
+        let healing_done = heal_effect.calc_healing.max(total_hp - target_pkmn.current_hp);
+
+        target_pkmn.current_hp += healing_done;
+        let final_hp = target_pkmn.current_hp;
+
+        // TODO: Check anything that triggers from HP gain/etc
+        // TODO: Think about message for healing which is different for multiple actions
+        let heal_msg = format!("{target_pkmn} healed {healing_done}!");
+
+        vec![BattleContainer::one(self.clone(), Some(heal_msg))]
     }
 
     pub fn perform_turn(&mut self) {
@@ -1543,9 +1571,11 @@ impl<'battle> BattleState<'battle> {
                 return self.sim_move(&mut move_action.clone())
             },
             BattleAction::Stat(mut stat_actions) => {
+                let mut all_vecs = vec![];
                 for stat_action in stat_actions {
-                    return self.sim_stat(stat_action)
+                    all_vecs.extend(self.sim_stat(stat_action));
                 }
+                return all_vecs
             },
             BattleAction::Status(mut status_action) => {
                 return self.sim_status(status_action)
@@ -1554,6 +1584,9 @@ impl<'battle> BattleState<'battle> {
                 // return self.perform_damage(dmg_action);
                 return self.sim_damage(dmg_action);
                 // TODO: implement this
+            },
+            BattleAction::Heal(mut heal_effect) => {
+                self.sim_healing(heal_effect)
             },
             BattleAction::Protect(move_name, position, accuracy ) => {
                 // Check the protect_counter in the function
@@ -1576,12 +1609,14 @@ impl<'battle> BattleState<'battle> {
             //     return self.sim_vol_status(vol_status, position, accuracy)
             // }
             _ => {
-                    println!("Not yet implemented {action}")
+                    println!("Not yet implemented {action}");
+                    vec![BattleContainer::one(self.clone(), 
+                        Some("Not impl".to_string()))]
             }
         }
         
         
-        return vec![];
+        // return vec![];
 
         // Ok can nested states occur? yes
         // For each state, the internal state will create a clone and modify that state to return

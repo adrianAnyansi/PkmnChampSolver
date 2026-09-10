@@ -4,11 +4,11 @@ Just moves from 2 teams, just 2 teams focus
 I need to finish all the moves, and I need better testing cause I'm worrying things won't work correctly-
 
 ## Today
-Onto Stomping Tantrum
-    The test for this is annoying
-Fake Out
-    Still not implementing priority, just want the move to fail on not turn 1
-    Actually does
+--- 
+Throat Chop skip flag
+Heal effect enum
+Then Rage Powder logic
+
 
 ## Moves to implement
 Fake Out - Flinch, turn 0
@@ -20,18 +20,24 @@ Wide Guard - Special Protect
 Light Screen - room effect + damage calc
 
 ## Current Thoughts
-For fake out, I need to do the turns_active counter (which triggers abilities)
-    Slow Start, toxic, perish?
-    Natural Cure/Regenator only work if >0
-    Baton Pass (perserves this counter)
+---
+Should do a review on messaging, its fragmented right now
+It would be nice to have very good logging on effects and things that happen with strings, as when the logic gets more complicated, it will be impossible to track
 
-Thinking about the generic state stuff
-volatile status can work independently, so I can do just 0-1 state
-for multiple targets, i need the power_set for it to work correctly
-for multiple stats, this is never a case (at least as an AI says)
+Also want to separate sim_ & exec_ functions,
+Currently logic is BS -> BC<...BS>, but BC is a 1-1 so messaging can sit there. Lets go bottom to top actually-
+exec does BS -> BS, but I need BC anyways, so I have sim_ calling exec_
+exec_ modifies the sent BS, but also needs to add a message so that must be a return value. Also since I want to use a function for BC gen, gotta encapsulate it too. So it can return a vec<string>
+
+The root BS does not need to be stored?
+
+Some sim_ functions need a base_clone since some actions will always occur (i.e move miss still triggers turnsActive, etc). Throwing away this clone would be a waste, and I will never reuse the OG again (in the case where I'm making a decision, i.e sim move 1,2,3,4. Since I will be editing the action_queue, these are no longer equivalent states. I want to save it but its just not possible)
+I would need to make base_clones anyways, lets not overthink it much
+
 
 
 ## Future todos and cleanup
+---
 - damage calc is invalid on lower end, review
 - speed / priority (going to use a [priority, speed, action] queue)
 - team implementation, switch/faint

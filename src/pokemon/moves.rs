@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, PokemonMoveCategory::Special, PokemonMoveFlag::{CUSTOM_POWER, PRIORITY_3, RECOIL_1_3RD}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, Weather_Ball}}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
+use crate::{battle::{ BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -643,6 +643,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Matcha_Gotcha => PokemonMove::new(
             pkmn_move_name, GRASS, Special
         ).set_power(80).set_target(OPPONENT_ALL)
+        .add_flag(HEAL_1_2HF)
         .status_effect(BURNED, PkmnRational::pct(20), BattleTarget::OPPONENT,)
         .add_dummy_flag("recover 1/2"),
 
@@ -715,6 +716,8 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         _ => panic!("Move has not been implemented!")
     }
 }
+
+use crate::pokemon::moves::PokemonMoveName::*;
 
 
 pub fn get_charge_message(move_name:PokemonMoveName) -> String {

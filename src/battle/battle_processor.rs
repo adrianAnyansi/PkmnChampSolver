@@ -38,6 +38,17 @@ impl<'battle> BattleContainer<'battle> {
             }
         }
 
+    pub fn one(battle_state:BattleState,
+        message:Option<String>) -> BattleContainer {
+            BattleContainer { 
+                battle_ctns: vec![], 
+                battle_state: Some(battle_state), 
+                pct_chance: PkmnRational::ONE(), 
+                message: message.unwrap_or(String::new()),
+                name: format!("BattleCtn::ONE")
+            }
+        }
+
     /// Is this the main container 
     pub fn is_root(&self) -> bool {
         return self.pct_chance == PkmnRational::ONE()

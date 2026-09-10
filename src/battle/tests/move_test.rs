@@ -322,3 +322,45 @@ fn test_weather_ball_damage_boosts_and_changes_type_in_sun_with_dummy_bc() {
     // or figure out a way to directly get moves before execution
 
 }
+
+#[test]
+fn test_matcha_gotcha_queues_damage_then_burn_then_heals_after_damage() {
+    let mut root_bc = dummy_bc();
+    let matcha_gotcha = get_move(PokemonMoveName::Matcha_Gotcha);
+
+    BattleState::queue_move(
+        &mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::B1,
+        &matcha_gotcha,
+        vec![BattlePosition::F1],
+    );
+
+    root_bc.sim_next_action();
+
+    let battle_state = root_bc.battle_state.as_ref().unwrap();
+    let mut queued_actions = battle_state.action_queue.iter();
+
+    assert!(matches!(
+        queued_actions.next(),
+        Some(BattleAction::Damage(effect)) if effect.target == BattlePosition::F1
+    ), "Matcha Gotcha should queue damage first");
+    assert!(matches!(
+        queued_actions.next(),
+        Some(BattleAction::Status(status_action)) if status_action.status == crate::battle::data::PokemonStatus::BURNED
+    ), "Matcha Gotcha should queue the burn status after damage");
+
+    // Simulate the damage step, which should queue the drain heal
+    root_bc.sim_next_action();
+
+    let heal_action = root_bc
+        .battle_state
+        .as_ref()
+        .unwrap()
+        .action_queue
+        .front()
+        .expect("Matcha Gotcha damage should queue a heal");
+    assert!(matches!(
+        heal_action,
+        BattleAction::Heal(heal_effect) if heal_effect.target == BattlePosition::B1
+    ), "Matcha Gotcha should heal the user after dealing damage");
+}
