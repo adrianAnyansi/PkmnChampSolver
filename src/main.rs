@@ -1,5 +1,5 @@
 use crate::battle::battle_processor::{BattleContainer, BattleProcessor};
-use crate::battle::{data::ActivePokemon, BattlePosition, BattleState};
+use crate::battle::{data::{ActivePokemon, TrainedPokemon}, BattlePosition, BattleState};
 use crate::math::PkmnRational;
 use crate::pokemon::types::{PokemonType, get_type_multipler};
 
@@ -38,12 +38,14 @@ fn garchomp_fight_test() {
 
     // garchomp.learnset.push(draco_move);
     
-    bs.f_poke1 = Some(ActivePokemon::new(garchomp, 
-        pokemon::PokemonAbilityName::Sand_Force, 
-        pokemon::poke_stat::PokemonNature::Brave, None));
-    bs.b_poke1 = Some(ActivePokemon::new(bis, 
-        pokemon::PokemonAbilityName::Sand_Force, 
-        pokemon::poke_stat::PokemonNature::Brave, None));
+    let garchomp_trained = TrainedPokemon::new(garchomp,
+        pokemon::PokemonAbilityName::Sand_Force,
+        pokemon::poke_stat::PokemonNature::Brave, None);
+    let bis_trained = TrainedPokemon::new(bis,
+        pokemon::PokemonAbilityName::Sand_Force,
+        pokemon::poke_stat::PokemonNature::Brave, None);
+    bs.f_poke1 = Some(ActivePokemon::new(&garchomp_trained));
+    bs.b_poke1 = Some(ActivePokemon::new(&bis_trained));
 
     println!("Printing the current battle state:");
     println!("{}", bs.get_print_state());
@@ -75,19 +77,17 @@ fn battle_container_test() {
     let venusaur = pokemon::get_pkmn(PokemonName::Venusaur);
     let garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
 
-    bs.f_poke1 = Some(
-        ActivePokemon::new(venusaur, 
-            pokemon::PokemonAbilityName::Nothing, 
-            pokemon::poke_stat::PokemonNature::Brave, 
-            None)
-    );
+    let venusaur_trained = TrainedPokemon::new(venusaur,
+        pokemon::PokemonAbilityName::Nothing,
+        pokemon::poke_stat::PokemonNature::Brave, None);
+    bs.f_poke1 = Some(ActivePokemon::new(&venusaur_trained));
     bs.f_poke2 = Some(
         ActivePokemon::quick(PokemonName::Kingambit)
     );
-    bs.b_poke1 = Some(ActivePokemon::new(garchomp, 
-        pokemon::PokemonAbilityName::Nothing, 
-        pokemon::poke_stat::PokemonNature::Brave, 
-        None));
+    let garchomp_trained = TrainedPokemon::new(garchomp,
+        pokemon::PokemonAbilityName::Nothing,
+        pokemon::poke_stat::PokemonNature::Brave, None);
+    bs.b_poke1 = Some(ActivePokemon::new(&garchomp_trained));
 
 
     println!("Created {}, {} pokemon", venusaur, garchomp);

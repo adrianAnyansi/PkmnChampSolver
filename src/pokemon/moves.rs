@@ -728,9 +728,9 @@ pub fn get_charge_message(move_name:PokemonMoveName) -> String {
     }
 }
 
-pub fn format_pkmn_message(message_template:String,
-    source_poke:&ActivePokemon,
-    dest_poke:Option<ActivePokemon>) -> String {
+pub fn format_pkmn_message<'battle>(message_template:String,
+    source_poke:&ActivePokemon<'battle>,
+    dest_poke:Option<ActivePokemon<'battle>>) -> String {
 
         message_template
         .replace("{source_poke}", &source_poke.to_string())

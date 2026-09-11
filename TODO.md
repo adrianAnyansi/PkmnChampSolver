@@ -5,22 +5,32 @@ I need to finish all the moves, and I need better testing cause I'm worrying thi
 
 ## Today
 --- 
-Throat Chop skip flag
-Heal effect enum
-Then Rage Powder logic
+Rage Powder logic/redirection
 
 
 ## Moves to implement
-Fake Out - Flinch, turn 0
-Flare Blitz - Recoil after hit
-Throat Chop (add flag)
-Matcha Gotcha - Heal after hit
 Rage Powder - Center of attention
 Wide Guard - Special Protect
 Light Screen - room effect + damage calc
+Knock Off - Item mechanic
 
 ## Current Thoughts
 ---
+
+I gotta focus up and decide what to do-
+- Moves (dependant on other things)
+- Abilties 
+- Items
+- Switch Action & Fainting
+- Team mechanics & Trained Pokemon
+- Beginning / End of battle
+
+
+
+There are a few moves to do but then abilities and items come next
+The other issue is team and switch mechanics don't exist
+
+
 Should do a review on messaging, its fragmented right now
 It would be nice to have very good logging on effects and things that happen with strings, as when the logic gets more complicated, it will be impossible to track
 

@@ -18,6 +18,19 @@ Due to speed & damage calcs work, I need some way to retrospec certain values an
 Call it Single Stat/Ability Resolver
 
 
+# Team mechanics
+How do I handle the following
+- Pokemon switched out: Use another struct that strips the active stuff (but to reuse this wouldn't I need to clear it anyway, also Baton Pass)
+- Forme changes (need to replace the pokemon struct) (do this later)
+
+Trained
+- pokemon stats, trained, ability, nature
+Inactive
+- Current HP, status, forme changes (mimikyu disguise, etc).
+    - I'm not sure of all the different cases, will keep adding to this
+Active
+- Everything & Battle flags
+
 # Multi-universe simulations
 In order to explore all interactions, I need to create a separate state for each action/effect. 
 

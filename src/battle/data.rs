@@ -76,23 +76,71 @@ enum PokemonFieldState {
     WIDE_GUARD,
 }
 
-// TODO: Need to separate TrainedPokemon from active
-
-/// Represents an active pokemon slot including current hp, status and boosts
-// #[allow(Display)]
+/// Represents a Pokemon with its species and trainer-selected configuration.
 #[derive(Clone)]
-pub struct ActivePokemon {
+pub struct TrainedPokemon {
     pub pokemon: &'static Pokemon,
     /// additional stats, must be 32+32+2 total
     pub trained_stats: PokemonStats,
     pub ability: PokemonAbilityName,
     pub nature: PokemonNature,
+}
+
+impl TrainedPokemon {
+    pub fn new (pokemon:&'static Pokemon,
+        ability:PokemonAbilityName,
+        nature:PokemonNature,
+        trained_stats: Option<PokemonStats>) -> Self {
+        Self {
+            pokemon,
+            trained_stats: trained_stats.unwrap_or_else(PokemonStats::empty),
+            ability,
+            nature,
+        }
+    }
+
+    pub fn get_stat(&self, stat_type:PokemonStatName) -> i32 {
+        get_full_stat(&self.pokemon.base_stats, Some(&self.trained_stats), stat_type)
+    }
+
+    pub fn get_pkmn_type(&self) -> Vec<PokemonType> {
+        self.pokemon.types.iter()
+            .filter(|&&t| t != PokemonType::TYPELESS)
+            .copied()
+            .collect()
+    }
+
+    pub fn get_type_mult(&self, move_type:PokemonType) -> f64 {
+        if move_type == PokemonType::TYPELESS {
+            return 1.0
+        };
+        self.get_pkmn_type().into_iter()
+            .map(|type_def| get_type_multipler(move_type, type_def))
+            .product()
+    }
+}
+
+/// Represents inactive pokemon in battle but not on the field
+#[derive(Clone)]
+pub struct InActivePokemon<'battle> {
+    pub trained_pokemon: &'battle TrainedPokemon,
+    pub status: PokemonStatus,
+    pub current_hp: u32,
+
+    pub disguise_flag: bool,
+    pub eiscue_flag: bool
+    // etc
+}
+
+/// Represents an active pokemon slot including current hp, status and boosts
+#[derive(Clone)]
+pub struct ActivePokemon<'battle> {
+    pub trained_pokemon: &'battle TrainedPokemon,
+
     pub status: PokemonStatus,
     pub stat_modifier: [PokemonStatModifier; 5], // temp exclude evasion & acc
     /// current health in the battle
     pub current_hp: i32,
-    /// Keep track of conditions in battle
-    // pub in_battle_flags: HashMap<String, String>,
     // pub move_history: Vec<PokemonMoveName>,
     /// How many turns active on the field
     pub turns_active: u8,
@@ -109,29 +157,14 @@ pub struct ActivePokemon {
     pub confusion_count: u8,
 }
 
-// TODO: Create a separate TrainedPokemon which contains stats + natures?
-
-// TODO: Currently I'm moving the struct instead of referencing
-// I don't want multiple structs of base pokemon but it's hard to 
-// reason about this while being new to Rust.
-// So I'm just going to leave this as a copy for now and remember I'm duplicating
-impl ActivePokemon {
-    pub fn new (pokemon:&'static Pokemon, 
-        ability:PokemonAbilityName, 
-        nature:PokemonNature,
-        trained_stats: Option<PokemonStats>) -> Self {
-
-            // let combined_stats = trained_stats.clone() + pokemon.base_stats.clone();
-            let max_hp = get_full_stat(&pokemon.base_stats, trained_stats.as_ref(), PokemonStatName::HEALTH);
-            let trained_stat = trained_stats.unwrap_or_else(|| PokemonStats::empty()); // placeholder
+impl<'battle> ActivePokemon<'battle> {
+    pub fn new (trained_pokemon:&'battle TrainedPokemon) -> Self {
+            let max_hp = trained_pokemon.get_stat(PokemonStatName::HEALTH);
             Self {
                 current_hp: max_hp, // copied first
                 status: PokemonStatus::NONE,
                 stat_modifier: [PokemonStatModifier::ZERO; 5],
-                ability,
-                nature,
-                trained_stats: trained_stat,
-                pokemon: pokemon, // this is moved here
+                trained_pokemon,
                 // move_history: Vec::new(),
                 turns_active: 0, // first turn effect counter
                 consec_protect_count: 0,
@@ -144,22 +177,21 @@ impl ActivePokemon {
             }
     }
 
-    pub fn quick(poke_name:PokemonName) -> ActivePokemon {
+    pub fn quick(poke_name:PokemonName) -> ActivePokemon<'static> {
         let pokemon = pokemon::get_pkmn(poke_name);
-        ActivePokemon::new(
+        let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
             pokemon,
             PokemonAbilityName::Nothing,
             PokemonNature::Quirky,
             None
-        )
+        )));
+        ActivePokemon::new(trained_pokemon)
     }
 
     /// This will calculate the full stat spread including boosts
     /// so calculate once and update if changes occur
     pub fn get_active_stat(&self, stat_type:PokemonStatName) -> i32 {
-        let pkmn = &self.pokemon;
-
-        let comb_stat = get_full_stat(&pkmn.base_stats, Some(&self.trained_stats), stat_type);
+        let comb_stat = self.trained_pokemon.get_stat(stat_type);
 
         match stat_type {
             PokemonStatName::HEALTH => comb_stat,
@@ -169,6 +201,10 @@ impl ActivePokemon {
                 comb_stat * self.stat_modifier[stat_idx]
             }
         }
+    }
+
+    pub fn get_type_mult(&self, move_type:PokemonType) -> f64 {
+        self.trained_pokemon.get_type_mult(move_type)
     }
 
     pub fn get_active_stat_boost(&mut self, stat_type:PokemonStatName) -> &mut PokemonStatModifier {
@@ -194,30 +230,9 @@ impl ActivePokemon {
         }
     }
 
-    pub fn get_pkmn_type(&self) -> Vec<PokemonType> {
-        // TODO: Calc this pokemon's current type based on more factors
-        // Filter out TYPELESS to handle the null/None case
-        self.pokemon.types.iter()
-            .filter(|&&t| t != PokemonType::TYPELESS)
-            .copied()
-            .collect()
-    }
-
-    pub fn get_type_mult(&self, move_type:PokemonType) -> f64 {
-        if move_type == PokemonType::TYPELESS {
-            return 1.0
-        };
-        let types = self.get_pkmn_type();
-        let mut type_mult = 1.0;
-        for type_def in types {
-            type_mult *= get_type_multipler(move_type, type_def);
-        }
-        type_mult
-    }
-
 }
 
-impl core::fmt::Display for ActivePokemon {
+impl core::fmt::Display for ActivePokemon<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut hp_pct_str:String = String::new();
         let max_hp = self.get_active_stat(PokemonStatName::HEALTH);
@@ -232,17 +247,18 @@ impl core::fmt::Display for ActivePokemon {
             let pct = (self.current_hp as f64 / max_hp as f64) * 100.0;
             hp_pct_str = format!(" {}%", pct.round());
         }
-        write!(f, "{}{status_short}{hp_pct_str}", self.pokemon)
+        write!(f, "{}{status_short}{hp_pct_str}", self.trained_pokemon.pokemon)
     }
 }
 
 
-pub struct ActiveTeam {
-    pub pokemon: [ActivePokemon; 6],
+pub struct ActiveTeam<'battle> {
+    pub pokemon: [ActivePokemon<'battle>; 6],
+    /// Mega tracking
     pub used_mega: bool,
     pub has_mega: bool
     // tera
-    // gigata?
+    // gigantamax?
     // any other team based stuff here
 }
 
@@ -251,8 +267,11 @@ pub struct ActiveTeam {
 pub enum BattleWeatherState {
     /// No weather
     NONE,
+    /// Sun weather
     SUN,
+    /// Rain weather
     RAIN,
+    /// Sandstorm weather
     SANDSTORM,
     /// No longer possible
     // HAIL,

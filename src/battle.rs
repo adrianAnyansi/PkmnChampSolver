@@ -305,10 +305,10 @@ pub enum MoveResultEnum {
 /// This can include intermediate states
 #[derive(Clone)]
 pub struct BattleState<'battle> {
-    pub f_poke1: Option<ActivePokemon>,
-    pub f_poke2: Option<ActivePokemon>,
-    pub b_poke1: Option<ActivePokemon>,
-    pub b_poke2: Option<ActivePokemon>,
+    pub f_poke1: Option<ActivePokemon<'battle>>,
+    pub f_poke2: Option<ActivePokemon<'battle>>,
+    pub b_poke1: Option<ActivePokemon<'battle>>,
+    pub b_poke2: Option<ActivePokemon<'battle>>,
     /// Current Weather
     pub weather: BattleWeatherState,
     /// active terrain (only 1) on the field
@@ -358,8 +358,8 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
-    pub fn simple (f_poke:ActivePokemon, 
-        b_poke:ActivePokemon) -> Self {
+    pub fn simple (f_poke:ActivePokemon<'battle>, 
+        b_poke:ActivePokemon<'battle>) -> Self {
             let mut bs = BattleState::new();
             bs.f_poke1 = Some(f_poke);
             bs.b_poke1 = Some(b_poke);
@@ -367,8 +367,8 @@ impl<'battle> BattleState<'battle> {
             bs
     }
 
-    fn get_default_poke_name (poke:&Option<ActivePokemon>) -> String {
-        return poke.as_ref().map(|p| p.pokemon.name.to_string()).unwrap_or_else(|| "_".to_string());
+    fn get_default_poke_name (poke:&Option<ActivePokemon<'battle>>) -> String {
+        return poke.as_ref().map(|p| p.trained_pokemon.pokemon.name.to_string()).unwrap_or_else(|| "_".to_string());
     }
 
     fn get_front_poke(&self) -> String {
@@ -419,7 +419,7 @@ impl<'battle> BattleState<'battle> {
     }
 
 
-    fn get_active_mut(&mut self, position: BattlePosition) -> Option<&mut ActivePokemon> {
+    fn get_active_mut<'a>(&'a mut self, position: BattlePosition) -> Option<&'a mut ActivePokemon<'battle>> {
         match position {
             BattlePosition::F1 => self.f_poke1.as_mut(),
             BattlePosition::F2 => self.f_poke2.as_mut(),
@@ -428,7 +428,7 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
-    pub fn get_active(&self, position: BattlePosition) -> Option<&ActivePokemon> {
+    pub fn get_active<'a>(&'a self, position: BattlePosition) -> Option<&'a ActivePokemon<'battle>> {
         match position {
             BattlePosition::F1 => self.f_poke1.as_ref(),
             BattlePosition::F2 => self.f_poke2.as_ref(),
@@ -438,7 +438,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Fixed-order [F1, F2, B1, B2] view of the 4 active slots, always in sync with the fields.
-    fn get_all_active(&self) -> [Option<&ActivePokemon>; 4] {
+    fn get_all_active<'a>(&'a self) -> [Option<&'a ActivePokemon<'battle>>; 4] {
         [
             self.f_poke1.as_ref(),
             self.f_poke2.as_ref(),
@@ -448,7 +448,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Mutable counterpart of [`BattleState::get_all_active`], same [F1, F2, B1, B2] order.
-    fn get_all_active_mut(&mut self) -> [Option<&mut ActivePokemon>; 4] {
+    fn get_all_active_mut<'a>(&'a mut self) -> [Option<&'a mut ActivePokemon<'battle>>; 4] {
         [
             self.f_poke1.as_mut(),
             self.f_poke2.as_mut(),
@@ -525,7 +525,7 @@ impl<'battle> BattleState<'battle> {
             _ => 1
         };
         let is_stab = [Physical, Special].contains(&move_action.pkm_move.category)
-            && source_act_pkmn.pokemon.has_type(move_action.pkm_move.r#type);
+            && source_act_pkmn.trained_pokemon.pokemon.has_type(move_action.pkm_move.r#type);
         let num_targets = move_action.targets.len();
         let mut result_act_vec: Vec<BattleAction> = vec![];
 
@@ -533,7 +533,7 @@ impl<'battle> BattleState<'battle> {
         for target_position in &move_action.targets {
             let target_pkmn = self.get_active_mut(*target_position).expect("target must exist");
             
-            let poke = &target_pkmn.pokemon;
+            let poke = &target_pkmn.trained_pokemon.pokemon;
             println!("*Start damage calc {} for target {poke}", move_action.pkm_move.name);
 
             // TODO: Calculate crit, including status and etc effects
@@ -648,7 +648,7 @@ impl<'battle> BattleState<'battle> {
             if (stat_changed) {
                 let change_dir = if [PokemonStatModifier::MINUS_1, PokemonStatModifier::MINUS_2].contains(&stat_action.change) {"fell"} else {"rose"};
                 let final_value = *stat_ref;
-                println!("{}'s {} {change_dir} [{:?}]!", target_act_pkmn.pokemon, 
+                    println!("{}'s {} {change_dir} [{:?}]!", target_act_pkmn.trained_pokemon.pokemon,
                     stat_action.stat_name, 
                     final_value,
                 );
@@ -683,7 +683,7 @@ impl<'battle> BattleState<'battle> {
                 }
                 clone_state.exec_stat_change(*target_pos, &stat_action);
                 let target_poke = clone_state.get_active(*target_pos).unwrap();
-                stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.pokemon, 
+                        stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
                     stat_action.stat_name, 
                     target_poke.get_active_stat_modf(stat_action.stat_name),
                 ));
@@ -955,7 +955,7 @@ impl<'battle> BattleState<'battle> {
             
             // Contains resulting actions from move hit
             let mut result_act_vec: Vec<BattleAction> = vec![];
-            let def_poke = &target_act_pkmn.pokemon;
+            let def_poke = &target_act_pkmn.trained_pokemon.pokemon;
             
             if target_act_pkmn.battle_status.has_flag(PokemonBattleState::PROTECT) {
                 // TODO: BattleAction::Message() for hidden effects?
@@ -1185,7 +1185,7 @@ impl<'battle> BattleState<'battle> {
             TERA x1.5 on og type but not tera, x2 if tera type == og type or ADPT no tera
                 x2.25 if match tera and APT
              */
-            if atk_poke.pokemon.has_type(move_type) {
+            if atk_poke.trained_pokemon.pokemon.has_type(move_type) {
                 dmg_modifier_list.push_back(1.5);
             }
             // 
@@ -1279,7 +1279,7 @@ impl<'battle> BattleState<'battle> {
 
             // Powder check
             if move_action.pkm_move.flags.has_flag(PokemonMoveFlag::POWDER) && 
-                (poke.pokemon.has_type(PokemonType::GRASS)) {
+                (poke.trained_pokemon.pokemon.has_type(PokemonType::GRASS)) {
                 return false;
             }
 
@@ -1370,7 +1370,7 @@ impl<'battle> BattleState<'battle> {
 
         let type_prevention = |status:PokemonStatus, has_type:PokemonType| -> bool {
             return status_action.status == status &&
-                target_act_poke.pokemon.has_type(has_type)
+                target_act_poke.trained_pokemon.pokemon.has_type(has_type)
         };
 
         use PokemonStatus::*;
@@ -1387,7 +1387,7 @@ impl<'battle> BattleState<'battle> {
         // TODO: Check ability prevention
         // TODO: Check field & etc prevention
 
-        if target_act_poke.status != PokemonStatus::NONE {
+        if target_act_poke.status == PokemonStatus::NONE {
             target_act_poke.status = status_action.status
         }
     }
@@ -1757,7 +1757,6 @@ impl<'battle> BattleState<'battle> {
 
 mod test {
 
-use std::ops::Deref;
 
 use crate::battle::PokemonStatus::BURNED;
 // use super::*;
@@ -1863,8 +1862,8 @@ use crate::pokemon::moves::{get_move, PokemonMoveName};
         // Simulate heat wave on 2 targets
         miss_bc.sim_next_action();
 
-        // there should be 4 ctns, nothing, b1 hit, b2 hit, b1 & b2 hit
-        assert_eq!(miss_bc.battle_ctns.len(), 4);
+        assert_eq!(miss_bc.battle_ctns.len(), 4, 
+            "There should be 4 containers, no-state, b1 hit, b2 hit and b1+b2 hit");
         // TODO: Complete this test on accuracy and states and etc
 
 
@@ -1909,7 +1908,8 @@ use crate::pokemon::moves::{get_move, PokemonMoveName};
         
         assert_eq!(new_bs.action_queue.len(), 0);
         // pokemon F1 should be burnt
-        assert_eq!(new_bs.f_poke1.as_ref().unwrap().status, PokemonStatus::BURNED);
+        assert_eq!(new_bs.f_poke1.as_ref().unwrap().status, PokemonStatus::BURNED, 
+            "Pokemon F1 should be burned");
         
     }
 
@@ -1935,7 +1935,7 @@ use crate::pokemon::moves::{get_move, PokemonMoveName};
         root_bc.sim_next_action();
 
         // Should be processed, get new state
-        let mut new_bs = root_bc.battle_state.as_mut().unwrap();
+        let new_bs = root_bc.battle_state.as_mut().unwrap();
         
         assert_eq!(root_bc.battle_ctns.len(), 0);        
         assert_eq!(new_bs.action_queue.len(), 0);
