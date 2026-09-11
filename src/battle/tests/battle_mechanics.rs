@@ -1,0 +1,166 @@
+use super::*;
+use crate::pokemon::PokemonName::{Charizard, Garchomp, Kingambit, Venusaur};
+use crate::pokemon::moves::PokemonMoveName::Heat_Wave;
+use crate::pokemon::poke_stat::PokemonStatModifier::MINUS_5;
+use crate::pokemon::poke_stat::PokemonStatName::*;
+use crate::pokemon::*;
+use crate::pokemon::moves::{get_move, PokemonMoveName};
+
+#[test]
+/// Verify base damage formula using blank Garchomp Draco Meteor vs Kingambit
+fn test_move_calc() {
+    let garchomp_base_stat = &get_pkmn(Garchomp).base_stats;
+    let kingambit_base_stat = &get_pkmn(Kingambit).base_stats;
+    let draco_move = get_move(PokemonMoveName::Draco_Meteor);
+
+    let atk_stat = get_full_stat(garchomp_base_stat, None,
+        PokemonStatName::SPECIAL_ATTACK);
+    let def_stat = get_full_stat(kingambit_base_stat, None,
+        PokemonStatName::SPECIAL_DEFENSE);
+    let dmg = pkmn_damage_formula(draco_move.power, atk_stat, def_stat);
+
+    let f_dmg = mult_and_round(dmg, 1.5);
+    let f2_dmg = mult_and_round(f_dmg, 0.5);
+    assert_eq!(f2_dmg, 42);
+
+    let min_dmg = mult_and_round(f2_dmg, 0.85);
+    assert_eq!(min_dmg, 35);
+}
+
+#[test]
+fn test_dmg2_calc() {
+    let char_base_stat = &get_pkmn(Charizard).base_stats;
+    let venu_base_stat = &get_pkmn(Venusaur).base_stats;
+    let pkmn_move = get_move(PokemonMoveName::Heat_Wave);
+
+    let atk_stat = get_full_stat(char_base_stat, None,
+        PokemonStatName::SPECIAL_ATTACK);
+    let def_stat = get_full_stat(venu_base_stat, None,
+        PokemonStatName::SPECIAL_DEFENSE);
+    let dmg = pkmn_damage_formula(pkmn_move.power, atk_stat, def_stat);
+
+    let f_dmg = mult_and_round(dmg, 1.5);
+    let f2_dmg = mult_and_round(f_dmg, 2.0);
+    assert_eq!(f2_dmg, 138);
+
+    let min_dmg = mult_and_round(f2_dmg, 0.85);
+    assert_eq!(min_dmg, 116);
+}
+
+#[test]
+fn test_move_accuracy_sim() {
+    let ttar_pkmn = ActivePokemon::quick(PokemonName::Tyranitar);
+    let ven_pkmn = ActivePokemon::quick(PokemonName::Venusaur);
+
+    let mut bs = BattleState::simple(ttar_pkmn, ven_pkmn);
+    let hydro_pump = get_move(PokemonMoveName::Hydro_Pump);
+    BattleState::queue_move(&mut bs.action_queue,
+        BattlePosition::F1, &hydro_pump,
+        vec![BattlePosition::B1]);
+
+    let mut root_bc = BattleContainer::simple(bs, PkmnRational::ONE());
+    root_bc.sim_next_action();
+
+    assert_eq!(root_bc.pct_chance, PkmnRational::ONE());
+    assert_eq!(root_bc.battle_ctns.len(), 2);
+    assert_eq!(root_bc.battle_ctns[0].pct_chance,
+        PkmnRational::ONE() - PkmnRational::from_float(hydro_pump.accuracy));
+    assert!(root_bc.battle_ctns[0].battle_state.is_some());
+    assert_eq!(root_bc.battle_ctns[0].battle_state
+        .as_ref().unwrap().action_queue.len(), 0);
+    assert!(root_bc.battle_ctns[1].battle_state.is_some());
+    assert_eq!(root_bc.battle_ctns[1].battle_state
+        .as_ref().unwrap().action_queue.len(), 1);
+
+    let miss_bc = root_bc.battle_ctns.get_mut(0).unwrap();
+    let miss_bs = miss_bc.battle_state.as_mut().unwrap();
+    miss_bs.f_poke2 = Some(ActivePokemon::quick(PokemonName::Charizard));
+    miss_bs.b_poke2 = Some(ActivePokemon::quick(PokemonName::Rotom_Wash));
+
+    let heat_wave = get_move(Heat_Wave);
+    BattleState::queue_move(&mut miss_bs.action_queue,
+        BattlePosition::F2, &heat_wave,
+        vec![BattlePosition::B1, BattlePosition::B2]);
+
+    miss_bc.sim_next_action();
+
+    assert_eq!(miss_bc.battle_ctns.len(), 4,
+        "There should be 4 containers, no-state, b1 hit, b2 hit and b1+b2 hit");
+}
+
+fn dummy_bc<'battle>() -> BattleContainer<'battle> {
+    let ttar_pkmn = ActivePokemon::quick(PokemonName::Tyranitar);
+    let ven_pkmn = ActivePokemon::quick(PokemonName::Venusaur);
+
+    let bs = BattleState::simple(ttar_pkmn, ven_pkmn);
+    BattleContainer::simple(bs, PkmnRational::ONE())
+}
+
+#[test]
+fn test_status_effect_sim() {
+    let mut root_bc = dummy_bc();
+    let bs = root_bc.battle_state.as_mut().unwrap();
+
+    let status_action = StatusAction {
+        targets: vec![BattlePosition::F1],
+        status: PokemonStatus::BURNED,
+        accuracy: PkmnRational::ONE(),
+    };
+    bs.action_queue.push_back(BattleAction::Status(status_action));
+
+    assert_eq!(bs.action_queue.len(), 1);
+
+    root_bc.sim_next_action();
+
+    assert_eq!(root_bc.battle_ctns.len(), 0);
+    let new_bs = root_bc.battle_state.as_ref().unwrap();
+
+    assert_eq!(new_bs.action_queue.len(), 0);
+    assert_eq!(new_bs.f_poke1.as_ref().unwrap().status, PokemonStatus::BURNED,
+        "Pokemon F1 should be burned");
+}
+
+#[test]
+fn test_stat_modifier_sim() {
+    let mut root_bc = dummy_bc();
+    let bs = root_bc.battle_state.as_mut().unwrap();
+
+    let stat_action = StatAction {
+        targets: vec![BattlePosition::F1],
+        stat_name: ATTACK,
+        change: MINUS_5,
+        pct_chance: PkmnRational::ONE(),
+    };
+    bs.action_queue.push_back(BattleAction::Stat(vec![stat_action]));
+
+    assert_eq!(bs.action_queue.len(), 1);
+
+    root_bc.sim_next_action();
+
+    let new_bs = root_bc.battle_state.as_mut().unwrap();
+
+    assert_eq!(root_bc.battle_ctns.len(), 0);
+    assert_eq!(new_bs.action_queue.len(), 0);
+    assert_eq!(new_bs.f_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(),
+        PokemonStatModifier::MINUS_5);
+}
+
+#[test]
+fn test_pct_action_flinch() {
+    let mut root_bc = dummy_bc();
+    let bs = root_bc.battle_state.as_mut().unwrap();
+
+    bs.action_queue.push_back(BattleAction::PctAction(
+        BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true),
+        BattlePosition::F1,
+        PkmnRational::ONE(),
+    ));
+
+    root_bc.sim_next_action();
+
+    assert_eq!(root_bc.battle_ctns.len(), 0);
+    let new_bs = root_bc.battle_state.as_ref().unwrap();
+    assert_eq!(new_bs.action_queue.len(), 0);
+    assert!(new_bs.f_poke1.as_ref().unwrap().battle_status
+        .has_flag(PokemonBattleState::FLINCHING));
+}
