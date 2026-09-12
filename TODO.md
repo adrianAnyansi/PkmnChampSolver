@@ -5,9 +5,11 @@ I need to finish all the moves, and I need better testing cause I'm worrying thi
 
 ## Today
 --- 
-Fix the multiple targets stat application
-(data can be multiple, but in-game is stat+multiplier)
-Finish refactors of stat application rewrite
+Update stat_Action & sim_stat to take 
+N targets, 1 stat + multipler
+
+I did the diagram in the shower, so while this sucks on pct based hit, the complexity of multi-target stat is just too much.
+The worst case is 3 extra intermediate battle states but I dont have overlap like I intitially anticipated
 
 
 Rage Powder logic/redirection

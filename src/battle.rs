@@ -19,7 +19,7 @@ use crate::battle;
 use crate::battle::DamageAfterEffect::Drain;
 use crate::battle::data::{ActivePokemon, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonStatus};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
-use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
+use crate::pokemon::moves::{MoveEffect, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
@@ -56,7 +56,7 @@ pub enum BattleAction<'battle> {
     /// Status being enacted by move or effect
     Status(StatusAction),
     /// Stat modifier change being enacted by move or effect
-    Stat(Vec<StatAction>),
+    // Stat(Vec<StatAction>),
     /// Volatile status effect
     VolatileStatus(BattlePosition, PokemonBattleState, PkmnRational),
     /// Ability effect
@@ -92,8 +92,8 @@ impl core::fmt::Display for BattleAction<'_> {
         match self {
             BattleAction::Move(act) => 
                 write!(f, "BattleAction::Move({})", act.pkm_move.name),
-            BattleAction::Stat(act) => 
-                write!(f, "BattleAction::Stat({})", act[0].stat_name),
+            // BattleAction::Stat(act) => 
+            //     write!(f, "BattleAction::Stat({})", act[0].stat_name),
             BattleAction::Damage(act) => 
                 write!(f, "BattleAction::Damage({})", act.damage_source),
             BattleAction::Status(act) =>
@@ -108,7 +108,7 @@ impl core::fmt::Display for BattleAction<'_> {
 /// Subset of BattleAction with actions that typically have % of occurring
 #[derive(Clone)]
 pub enum BattlePctAction {
-    Stat(StatAction),
+    Stat(StatSet),
     Status(PokemonStatus),
     AddFlag(PokemonBattleState, bool)
 }
@@ -465,37 +465,56 @@ impl<'battle> BattleState<'battle> {
 
 
     // Can perform checks
-
-    fn can_perform_stat(&self, stat_action:&StatAction) -> Vec<BattlePosition> {
+    // Check if stat is entirely blocked, if so quit simulation
+    fn can_perform_stat(&self,
+        stat_modf:&StatModf, target_pos:BattlePosition) -> bool
+    {
 
             // TODO: Check if blocked by pokemon ability/item
             // TODO: Check field conditions
 
-            let valid_targets:Vec<BattlePosition> = stat_action.targets.iter().filter(
-                |pos:&&BattlePosition| {
-                    let t_act_poke = self.get_active(**pos);
+            let t_act_poke = self.get_active(target_pos);
+            if t_act_poke.is_none() {
+                return false;
+            }
 
-                    // Ensure that target pokemon exists
-                    if t_act_poke.is_none() {
-                        return false
-                    }
+            // Check if blocked by ability/item/etc
+            let curr_pkmn = t_act_poke.expect("Non-null effect");
 
-                    // Check if blocked by ability or item (Clear Body, Covert Cloak)
+            // each stat needs to be evaluated separately or modified
+            let stat_ref = curr_pkmn.get_active_stat_modf(stat_modf.name);
+            if *stat_ref == PokemonStatModifier::MINUS_6 && stat_modf.chg.direction() == -1
+            || *stat_ref == PokemonStatModifier::PLUS_6 && stat_modf.chg.direction() == 1 {
+                return false
+            }
 
-                    let curr_pkmn = t_act_poke.expect("Non-null effect");
+            true
+
+            // let valid_targets:Vec<BattlePosition> = stat_action.targets.iter().filter(
+            //     |pos:&&BattlePosition| {
+            //         let t_act_poke = self.get_active(**pos);
+
+            //         // Ensure that target pokemon exists
+            //         if t_act_poke.is_none() {
+            //             return false
+            //         }
+
+            //         // Check if blocked by ability or item (Clear Body, Covert Cloak)
+
+            //         let curr_pkmn = t_act_poke.expect("Non-null effect");
                     
-                    // Check if stat is maxed, then cancel
-                    let stat_ref = curr_pkmn.get_active_stat_modf(stat_action.stat_name);
-                    if *stat_ref == PokemonStatModifier::MINUS_6 && stat_action.change.direction() == -1 
-                    || *stat_ref == PokemonStatModifier::PLUS_6 && stat_action.change.direction() == 1 {
-                        return false
-                    }
-                    true
-                }
-            ).copied().collect();
+            //         // Check if stat is maxed, then cancel
+            //         let stat_ref = curr_pkmn.get_active_stat_modf(stat_action.stat_name);
+            //         if *stat_ref == PokemonStatModifier::MINUS_6 && stat_action.change.direction() == -1 
+            //         || *stat_ref == PokemonStatModifier::PLUS_6 && stat_action.change.direction() == 1 {
+            //             return false
+            //         }
+            //         true
+            //     }
+            // ).copied().collect();
             
             
-            valid_targets
+            // valid_targets
 
         }
 
@@ -541,60 +560,85 @@ impl<'battle> BattleState<'battle> {
         None
     }
 
-    /// Simulate a stat change
-    fn sim_stat(&self, stat_action: StatAction) -> Vec<BattleContainer<'battle>> {
+    /// Simulate multiple* stat changes for a pokemon in order
+    fn sim_stat(&self, stat_set:&StatSet, target_pos:BattlePosition, rat:PkmnRational) -> Vec<BattleContainer<'battle>> {
 
-        let change_dir = if stat_action.change.direction() == 1 {"rose"} else {"fell"};
-        
-        // Get all targets that are hit
-        let valid_targets = self.can_perform_stat(&stat_action);
-        let prob_set = gen_power_set(vec![
-            stat_action.pct_chance; valid_targets.len()]);
+        // Calculate and validate final stat changes
+        let valid_modfs:Vec<StatModf> = // for Some(stat_modf) in stat_set.arr {
+            stat_set.arr.into_iter().flatten().filter_map( | stat_modf | {
+                // Modify stat change based on Simple, Contary, etc
+                let active_stat_modf = stat_modf;
 
-        let apply_func = 
-            |cloned_state:&mut BattleState, target_idx:u8| -> String {
-                let position = valid_targets[target_idx as usize];
-                cloned_state.exec_stat_change(position, &stat_action);
-                // stat
-                let target_poke = cloned_state.get_active(position).unwrap();
-                let stat_msg = format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
-                    stat_action.stat_name, 
-                    target_poke.get_active_stat_modf(stat_action.stat_name),
-                );
-                stat_msg
-            };
-        
-        return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
-        // Old implementation
-
-        let mut result_vecs:Vec<BattleContainer> = vec![];
-
-        for (bin_comb, rat) in prob_set.iter().enumerate() {
-            if prob_set[bin_comb] == PkmnRational::ZERO() { continue; }
-
-            let mut clone_state = self.clone();
-            let mut stat_msg = String::new();
-
-            for (idx, target_pos) in valid_targets.iter().enumerate() {
-                if (bin_comb >> idx) & 0b1 == 0 {
-                    let target_poke = clone_state.get_active(*target_pos).unwrap();
-                    stat_msg.push_str(&format!("{} avoided the stat change!", target_poke));
-                    continue
+                let can_perform = self.can_perform_stat(&stat_modf, target_pos);
+                if !can_perform {
+                    return None
                 }
-                clone_state.exec_stat_change(*target_pos, &stat_action);
-                let target_poke = clone_state.get_active(*target_pos).unwrap();
-                stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
-                    stat_action.stat_name, 
-                    target_poke.get_active_stat_modf(stat_action.stat_name),
-                ));
-            }
-            result_vecs.push(
-                BattleContainer::simple(clone_state, *rat)
-                .add_msg(stat_msg)
-            );
-        }
 
-        result_vecs
+                Some(active_stat_modf)
+            }).collect();
+
+        let apply_func = |cloned_state: &mut BattleState| {
+            for stat_modf in &valid_modfs {
+                cloned_state.exec_stat_change(target_pos, &stat_modf);
+                // let change_dir = if stat_modf.chg.direction() == 1 {"rose"} else {"fell"};
+                // TODO Do string tracking + into final container
+            }
+        };
+
+        return self.spawn_bc_for_single_prob(apply_func, rat);
+
+        // Old new implementation
+
+        // let valid_targets = self.can_perform_stat(&stat_action);
+        // let change_dir = if stat_action.change.direction() == 1 {"rose"} else {"fell"};
+        
+        // // Get all targets that are hit
+        // let prob_set = gen_power_set(vec![rat; valid_targets.len()]);
+
+        // let apply_func = 
+        //     |cloned_state:&mut BattleState, target_idx:u8| -> String {
+        //         let position = valid_targets[target_idx as usize];
+        //         cloned_state.exec_stat_change(position, &stat_action);
+        //         // stat
+        //         let target_poke = cloned_state.get_active(position).unwrap();
+        //         let stat_msg = format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
+        //             stat_action.stat_name, 
+        //             target_poke.get_active_stat_modf(stat_action.stat_name),
+        //         );
+        //         stat_msg
+        //     };
+        
+        // return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
+        
+        // // Old implementation
+        // let mut result_vecs:Vec<BattleContainer> = vec![];
+
+        // for (bin_comb, rat) in prob_set.iter().enumerate() {
+        //     if prob_set[bin_comb] == PkmnRational::ZERO() { continue; }
+
+        //     let mut clone_state = self.clone();
+        //     let mut stat_msg = String::new();
+
+        //     for (idx, target_pos) in valid_targets.iter().enumerate() {
+        //         if (bin_comb >> idx) & 0b1 == 0 {
+        //             let target_poke = clone_state.get_active(*target_pos).unwrap();
+        //             stat_msg.push_str(&format!("{} avoided the stat change!", target_poke));
+        //             continue
+        //         }
+        //         clone_state.exec_stat_change(*target_pos, &stat_action);
+        //         let target_poke = clone_state.get_active(*target_pos).unwrap();
+        //         stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
+        //             stat_action.stat_name, 
+        //             target_poke.get_active_stat_modf(stat_action.stat_name),
+        //         ));
+        //     }
+        //     result_vecs.push(
+        //         BattleContainer::simple(clone_state, *rat)
+        //         .add_msg(stat_msg)
+        //     );
+        // }
+
+        // result_vecs
         
     }
 
@@ -887,50 +931,77 @@ impl<'battle> BattleState<'battle> {
             // Process secondary effects and add to queue
             // -------------------------------------------------------------
             use crate::pokemon::moves::MoveEffect;
-            // TODO: Most vec will go unused, look for better logic
+
             // generate on hit effects to the action queue
+
             for hit_action in &active_move.hit_actions {
 
                 // TODO: All move_effects should contain targetting and pct_chance
                 // So the battle_action conversion is generic
-                let b_action:Option<BattleAction> = match hit_action {
-                    effect @ MoveEffect::Stat(stat_change) => {
-                        let stat_target_pos = BattleState::convert_effect_target_to_position(
-                            stat_change.target_type, move_action.source, Some(**target_pos));
 
-                        // NOTE: Stats are not combined*
-                        Some(BattleState::convert_effect_to_baction(
-                            effect,
-                            stat_target_pos))
-                        },
-                    MoveEffect::General(BattleEffect::Protect, target, rat) => {
-                        Some(BattleAction::Protect(active_move.name, 
-                                move_action.source, move_acc))
-                    },
-                    MoveEffect::General(BattleEffect::Flinch, target, rat) => {
-                        let f_target_pos = BattleState::convert_effect_target_to_position(
-                            *target, move_action.source, Some(**target_pos));
-                        Some(BattleAction::PctAction(
-                            BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true), 
-                                f_target_pos, *rat))
-                        // Some(BattleAction::VolatileStatus(f_target_pos, 
-                        //         PokemonBattleState::FLINCHING, *rat))
+                // TODO: Why is this match repeated in the function, because of effect_target conversions?
+                // target is overridden to 1 target
+                let effect_target_pos = match hit_action {
+                    MoveEffect::Stat(_, battle_target, rat) |
+                    MoveEffect::Status(_, battle_target, rat) |
+                    MoveEffect::General(_, battle_target, rat) 
+                    => {
+                        BattleState::convert_effect_target_to_position(
+                            *battle_target, move_action.source, Some(**target_pos))
                     }
-                    MoveEffect::Status(_, target, _rat) |
-                    MoveEffect::General(_, target, _rat) => {
-
-                        let status_target_pos = BattleState::convert_effect_target_to_position(
-                            *target, move_action.source, Some(**target_pos));
-                        
-                        Some(BattleState::convert_effect_to_baction(hit_action, status_target_pos))
-                    },
-                    _ => {println!("WARNING: MoveEffect not implemented"); None}
+                    MoveEffect::Charge(_) => {
+                        panic!("Not yet implemented")
+                    }
                 };
 
-                if let Some(action) = b_action {
+                let b_action = match hit_action {
+                    // Protect overrides* see if best data model for this
+                    MoveEffect::General(BattleEffect::Protect, _target, _rat) => {
+                        BattleAction::Protect(active_move.name, 
+                                move_action.source, move_acc)
+                    },
+                    _ => BattleState::convert_effect_to_baction(
+                            hit_action,
+                            effect_target_pos)
+                };
+
+                // let b_action:Option<BattleAction> = match hit_action {
+                //     effect @ MoveEffect::Stat(stat_set, target_type, rat) => {
+                //         let stat_target_pos = BattleState::convert_effect_target_to_position(
+                //             *target_type, move_action.source, Some(**target_pos));
+
+                //         // NOTE: Stats are not combined*
+                //         Some(BattleState::convert_effect_to_baction(
+                //             effect,
+                //             stat_target_pos))
+                //         },
+                //     MoveEffect::General(BattleEffect::Protect, target, rat) => {
+                //         Some(BattleAction::Protect(active_move.name, 
+                //                 move_action.source, move_acc))
+                //     },
+                //     MoveEffect::General(BattleEffect::Flinch, target, rat) => {
+                //         let f_target_pos = BattleState::convert_effect_target_to_position(
+                //             *target, move_action.source, Some(**target_pos));
+                //         Some(BattleAction::PctAction(
+                //             BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true), 
+                //                 f_target_pos, *rat))
+                //         // Some(BattleAction::VolatileStatus(f_target_pos, 
+                //         //         PokemonBattleState::FLINCHING, *rat))
+                //     }
+                //     MoveEffect::Status(_, target, _rat) |
+                //     MoveEffect::General(_, target, _rat) => {
+
+                //         let status_target_pos = BattleState::convert_effect_target_to_position(
+                //             *target, move_action.source, Some(**target_pos));
+                        
+                //         Some(BattleState::convert_effect_to_baction(hit_action, status_target_pos))
+                //     },
+                //     _ => {println!("WARNING: MoveEffect not implemented"); None}
+                // };
+
+                if true {
                     // NOTE: hit_Action order should not matter*
-                    // cloned_state.action_queue.push_front(action);
-                    result_act_vec.push(action);
+                    result_act_vec.push(b_action);
                 }
             }
             
@@ -1206,13 +1277,14 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Perform a statistic change on the pokemon
-    fn exec_stat_change(&mut self, target_pos:BattlePosition, stat_action: &StatAction) {
+    fn exec_stat_change(&mut self, target_pos:BattlePosition, stat_modf:&StatModf) {
         let target_poke = self.get_active_mut(target_pos);
         let target_act_pkmn = target_poke.expect("Non-null");
     
-        let stat_ref= target_act_pkmn.get_active_stat_boost(stat_action.stat_name);
+        let stat_ref = target_act_pkmn.get_active_stat_boost(stat_modf.name);
         // let pre_boost = *stat_ref;
-        *stat_ref += stat_action.change;
+
+        *stat_ref += stat_modf.chg;
     }
 
     /// Perform a status change on the battle state
@@ -1357,13 +1429,13 @@ impl<'battle> BattleState<'battle> {
                 // NOTE: Cloning as move may need modification
                 return self.sim_move(&mut move_action.clone())
             },
-            BattleAction::Stat(mut stat_actions) => {
-                let mut all_vecs = vec![];
-                for stat_action in stat_actions {
-                    all_vecs.extend(self.sim_stat(stat_action));
-                }
-                return all_vecs
-            },
+            // BattleAction::Stat(mut stat_actions) => {
+            //     let mut all_vecs = vec![];
+            //     for stat_action in stat_actions {
+            //         all_vecs.extend(self.sim_stat(stat_action));
+            //     }
+            //     return all_vecs
+            // },
             BattleAction::Status(mut status_action) => {
                 return self.sim_status(status_action)
             }
@@ -1392,24 +1464,28 @@ impl<'battle> BattleState<'battle> {
                     
             },
             BattleAction::PctActions(
-                BattlePctAction::Stat(stat_action), targets, rat) => {
+                BattlePctAction::Stat(stat_set), targets, rat) => {
 
-                    let valid_targets: Vec<BattlePosition> = targets.into_iter().flatten().collect();
-                    let prob_set = gen_power_set(vec![rat; valid_targets.len()]);
-                    let apply_func = 
-                    |cloned_state:&mut BattleState, target_idx:u8| {
-                        let position = valid_targets[target_idx as usize];
-                        cloned_state.exec_stat_change(position, &stat_action);
-                        String::from("Stringy")
-                    };
+                    // TODO: Multi target stat change is not implemented
+                    return self.sim_stat(&stat_set, targets[0].unwrap(), rat);
 
-                    return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
+                    // let valid_targets: Vec<BattlePosition> = targets.into_iter().flatten().collect();
+                    // let prob_set = gen_power_set(vec![rat; valid_targets.len()]);
+                    // let apply_func = 
+                    // |cloned_state:&mut BattleState, target_idx:u8| {
+                    //     let position = valid_targets[target_idx as usize];
+                    //     cloned_state.exec_stat_change(position, &stat_action);
+                    //     String::from("Stringy")
+                    // };
+
+                    // return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
                 },
             // BattleAction::VolatileStatus(position, vol_status, accuracy) => {
             //     return self.sim_vol_status(vol_status, position, accuracy)
             // }
             _ => {
-                    println!("Not yet implemented {action}");
+                    // panic!("Not implemented action sent")
+                    println!("[WARN] Not yet implemented {action}");
                     vec![BattleContainer::one(self.clone(), 
                         Some("Not impl".to_string()))]
             }
@@ -1469,19 +1545,22 @@ impl<'battle> BattleState<'battle> {
                     };
                 BattleAction::Status(status_act)
             },
-            MoveEffect::Stat(stat_c) => {
-                // TODO: Is multiple targets/stats worth it
-                let stat_act = 
-                        StatAction {
-                            stat_name: stat_c.name,
-                            change: stat_c.change,
-                            targets: vec![effect_target_pos],
-                            pct_chance: PkmnRational::from_float(stat_c.accuracy)
-                        };
+            MoveEffect::Stat(stat_set, _target, rat) => {
                     
                 // NOTE: multiple stats are allowed but not used right now
-                BattleAction::Stat(vec![stat_act])
+                // BattleAction::Stat(vec![stat_act])
+                
+                BattleAction::PctActions(
+                    BattlePctAction::Stat(*stat_set), 
+                    [Some(effect_target_pos), None, None, None],
+                     *rat)
+                    
             },
+            MoveEffect::General(BattleEffect::Flinch, _target, rat) => {
+                BattleAction::PctAction(
+                    BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true), 
+                        effect_target_pos, *rat)
+            }
             MoveEffect::General(battle_effect, target, rat ) => {
                 match battle_effect {
                     // TODO: Think about this

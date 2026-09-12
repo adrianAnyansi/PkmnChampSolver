@@ -61,11 +61,40 @@ pub struct PokemonMove {
 /// Describe an effect that occurs after a move/ability
 #[derive(Debug, Copy, Clone)]
 pub enum MoveEffect {
-    Stat(StatChange),
+    Stat(StatSet, BattleTarget, PkmnRational),
     Status(PokemonStatus, BattleTarget, PkmnRational),
     General(BattleEffect, BattleTarget, PkmnRational),
     /// Charge move, Source, Target
     Charge(BattlePosition)
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct StatModf {
+    pub name: PokemonStatName,
+    pub chg: PokemonStatModifier,
+}
+
+/// Decides 
+#[derive(Clone, Copy, Debug)]
+pub struct StatSet {
+    pub arr: [Option<StatModf>; 5]
+}
+
+impl StatSet {
+    pub fn get_stat_vec(&self) 
+    -> Vec<StatModf> 
+    {
+        self.arr.iter().flatten().copied().collect()
+    }
+
+    pub fn make_stat_set(stat_arr:Vec<(PokemonStatName, PokemonStatModifier)>) -> Self {
+        let mut arr = [None; 5];
+        for (index, (name, chg)) in stat_arr.into_iter().take(5).enumerate() {
+            arr[index] = Some(StatModf { name, chg });
+        }
+        
+        StatSet { arr }
+    }
 }
 
 /// Indicates a change in stat boosts
@@ -90,19 +119,6 @@ impl StatChange {
             }
         }
 }
-
-// TODO: Move to NumberConstants module for qol
-const ONE_THIRD:f64 = 1.0/3.0;
-
-/// Effects incurred by a move
-// trait MoveSecondEffect {
-//     /// Actions that modify battle state after hitting
-//     fn afterSuccess (battle_state:&BattleState);
-//     /// Can this move be performed
-//     fn canPerform(battle_state:&BattleState);
-//     /// Actions that occur before move is performed
-//     fn beforeAction (battle_state:&BattleState) -> bool;
-// }
 
 impl<'simulation> PokemonMove {
     pub fn new (move_name:PokemonMoveName, 
@@ -162,14 +178,13 @@ impl<'simulation> PokemonMove {
     }
 
     pub fn stat_change(mut self, 
-        name:PokemonStatName,
-        change:PokemonStatModifier,
         target_type:BattleTarget,
-        acc:f64
-        ) -> Self {
-
-        let stat_chg = StatChange { target_type, name, change, accuracy: acc };
-        self.hit_actions.push(MoveEffect::Stat(stat_chg));
+        stat_vec:Vec<(PokemonStatName, PokemonStatModifier)>,
+        acc: PkmnRational
+        ) -> Self 
+    {
+        let stat_set = StatSet::make_stat_set(stat_vec);
+        self.hit_actions.push(MoveEffect::Stat(stat_set, target_type, acc));
         self
     }
 
@@ -180,8 +195,9 @@ impl<'simulation> PokemonMove {
 
             self.hit_actions.push(MoveEffect::Status(status_type, target, chance));
             self
-        }
+    }
 
+    /// This is just for keeping track of unimplemented mechanics
     pub fn add_dummy_flag(mut self,
         flag:&str) -> Self {
             // TODO: Add custom flag for stuff
@@ -193,15 +209,15 @@ impl<'simulation> PokemonMove {
             self
         }
 
-    pub fn add_flinch(mut self,
-        chance:PkmnRational) -> Self {
+    pub fn add_flinch(mut self, chance:PkmnRational) -> Self {
             self.hit_actions.push(MoveEffect::General(
                 BattleEffect::Flinch, BattleTarget::OPPONENT, chance));
             self
     }
 
     pub fn add_generic(mut self, b_effect:BattleEffect,
-    target_pos:BattleTarget, rat:PkmnRational) -> Self {
+    target_pos:BattleTarget, rat:PkmnRational) -> Self 
+    {
         // let real_rat = rat.unwrap_or(PkmnRational::ONE());
         self.hit_actions.push(MoveEffect::General(b_effect, target_pos, rat));
         self
@@ -216,49 +232,6 @@ impl<'simulation> PokemonMove {
 
     pub fn is_status(&self) -> bool {
         self.category == PokemonMoveCategory::Status
-    }
-
-    #[deprecated]
-    pub fn after_hit (&self, 
-        battle_state:&BattleState) -> Vec<BattlePreAction> {
-        use PokemonMoveName::*;
-        match self.name {
-            Draco_Meteor => {
-                // get move_performer
-                // TODO: Determine from JSON
-                let stat_change = StatChange {
-                    target_type: BattleTarget::SELF,
-                    name: PokemonStatName::SPECIAL_ATTACK, 
-                    change: PokemonStatModifier::MINUS_2,
-                    accuracy: 1.0
-                };
-                let v_stat = vec![stat_change];
-                vec![BattlePreAction::Stat(v_stat)]
-            },
-            Iron_Head => {
-                return vec![
-                    BattlePreAction::Effect(
-                        vec![BattlePreEffect {
-                        target_type: OPPONENT,
-                        effect_type: BattleEffect::Flinch,
-                        accuracy: ONE_THIRD,
-                        damage_source: PokemonMoveName::Iron_Head.to_string()
-                    }
-                ])]
-            },
-            Rock_Slide => {
-                return vec![BattlePreAction::Effect(vec![
-                    BattlePreEffect {
-                        target_type: OPPONENT,
-                        effect_type: BattleEffect::Flinch,
-                        accuracy: ONE_THIRD,
-                        damage_source: PokemonMoveName::Rock_Slide.to_string()
-                    }
-                ])]
-            }
-            // TODO: Make a generator that takes a list of default stuff and returns
-            _ => return vec![] // no effect
-        }
     }
 
     #[deprecated(note="move to data backed version")]
@@ -513,14 +486,16 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
     use BattleTarget::*;
     use PokemonMoveName::*;
     use PokemonMoveFlag::*;
+    use PokemonStatModifier::*;
+    use PokemonStatName::*;
 
     match pkmn_move_name {
         PokemonMoveName::Draco_Meteor => PokemonMove::new(
             pkmn_move_name, DRAGON, Special
         ).set_attr(130, 0.9, OPPONENT)
-        .stat_change(PokemonStatName::SPECIAL_ATTACK, 
-        PokemonStatModifier::MINUS_2,
-    BattleTarget::SELF, 1.0),
+        .stat_change(BattleTarget::SELF, 
+            vec![(SPECIAL_ATTACK, MINUS_2)],
+            PkmnRational::ONE()),
 
         PokemonMoveName::Iron_Head => PokemonMove::new(
             pkmn_move_name, STEEL, Physical
@@ -547,8 +522,8 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             PokemonType::GROUND,
             Special
         ).set_attr(80, 1.0, OPPONENT)
-        .stat_change(SPECIAL_DEFENSE, MINUS_1, OPPONENT, 
-        PkmnRational::pct(10).float()),
+        .stat_change(OPPONENT, vec![(SPECIAL_DEFENSE, MINUS_1)], 
+        PkmnRational::pct(10)),
         
         PokemonMoveName::Sleep_Powder => PokemonMove::status(
             pkmn_move_name, GRASS, ANY
@@ -617,8 +592,9 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
 
         PokemonMoveName::Parting_Shot => PokemonMove::status(
             pkmn_move_name, DARK, OPPONENT)
-            .stat_change(ATTACK, MINUS_1, OPPONENT, PkmnRational::ONE().float())
-            .stat_change(SPECIAL_ATTACK, MINUS_1, OPPONENT, PkmnRational::ONE().float())
+            .stat_change(OPPONENT,
+                vec![(ATTACK, MINUS_1), (SPECIAL_ATTACK, MINUS_1)],
+                PkmnRational::ONE())
             .add_dummy_flag("switch self"), // TODO: Add switch effect
 
         PokemonMoveName::Throat_Chop => PokemonMove::new(
@@ -629,7 +605,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Moonblast => PokemonMove::new(
             pkmn_move_name, FAIRY, Special
         ).set_power(95)
-        .stat_change(ATTACK, MINUS_1, OPPONENT, PkmnRational::pct(10).float()),
+        .stat_change(OPPONENT, vec![(ATTACK, MINUS_1)], PkmnRational::pct(10)),
 
         Dazzling_Gleam => PokemonMove::new(
             pkmn_move_name, FAIRY, Special
@@ -637,8 +613,9 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
 
         Calm_Mind => PokemonMove::status(
             pkmn_move_name, NORMAL, SELF
-        ).stat_change(SPECIAL_ATTACK,PLUS_1, SELF, PkmnRational::ONE().float())
-        .stat_change(SPECIAL_DEFENSE,PLUS_1, SELF, PkmnRational::ONE().float()),
+        ).stat_change(SELF,
+            vec![(SPECIAL_ATTACK, PLUS_1), (SPECIAL_DEFENSE, PLUS_1)],
+            PkmnRational::ONE()),
 
         Matcha_Gotcha => PokemonMove::new(
             pkmn_move_name, GRASS, Special
@@ -660,8 +637,9 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Close_Combat => PokemonMove::new(
             pkmn_move_name,  FIGHTING, Physical
         ).set_power(120)
-        .stat_change(DEFENSE, MINUS_1, SELF, PkmnRational::ONE().float())
-        .stat_change(SPECIAL_DEFENSE, MINUS_1, SELF, PkmnRational::ONE().float()),
+        .stat_change(SELF,
+            vec![(DEFENSE, MINUS_1), (SPECIAL_DEFENSE, MINUS_1)],
+            PkmnRational::ONE()),
 
         Dire_Claw => PokemonMove::new(
             pkmn_move_name, POISON, Physical
@@ -673,8 +651,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         
         Swords_Dance => PokemonMove::status(
             pkmn_move_name, NORMAL, SELF)
-        .stat_change(ATTACK, PLUS_2, SELF, PkmnRational::ONE().float())
-        .stat_change(ATTACK, PLUS_2, SELF, PkmnRational::ONE().float()),
+        .stat_change(SELF, vec![(ATTACK, PLUS_2)], PkmnRational::ONE()),
         
         Heavy_Slam => PokemonMove::new(
             pkmn_move_name, STEEL, Physical
