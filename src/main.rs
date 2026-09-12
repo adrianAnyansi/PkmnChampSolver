@@ -29,44 +29,7 @@ fn make_pokemon_from_file() {
     println!("Pokemon from json: {poke_vec:#?}");
 }
 
-fn garchomp_fight_test() {
-    let mut bs = BattleState::new();                  
 
-    let garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
-    let bis = pokemon::get_pkmn(PokemonName::Kingambit);
-    let draco_move = pokemon::moves::get_move(PokemonMoveName::Draco_Meteor);
-
-    // garchomp.learnset.push(draco_move);
-    
-    let garchomp_trained = TrainedPokemon::new(garchomp,
-        pokemon::PokemonAbilityName::Sand_Force,
-        pokemon::poke_stat::PokemonNature::Brave, None);
-    let bis_trained = TrainedPokemon::new(bis,
-        pokemon::PokemonAbilityName::Sand_Force,
-        pokemon::poke_stat::PokemonNature::Brave, None);
-    bs.f_poke1 = Some(ActivePokemon::new(&garchomp_trained));
-    bs.b_poke1 = Some(ActivePokemon::new(&bis_trained));
-
-    println!("Printing the current battle state:");
-    println!("{}", bs.get_print_state());
-
-    // queue
-    BattleState::queue_move(
-        &mut bs.action_queue,
-        BattlePosition::F1,
-        &draco_move,
-        vec![BattlePosition::B1],
-    );
-    // & act_garchomp.pokemon.learnset[0]);
-
-    // do move
-    bs.perform_turn();
-    // There should be a print statement of the move being performed
-
-    // print state again
-    println!("Printing the current battle state:");
-    println!("{}", bs.get_print_state());
-}
 
 fn battle_container_test() {
 

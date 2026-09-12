@@ -460,6 +460,9 @@ impl<'battle> BattleState<'battle> {
         ]
     }
 
+
+    // Can perform checks
+
     fn can_perform_stat(&self, stat_action:&StatAction) -> Vec<BattlePosition> {
 
             // TODO: Check if blocked by pokemon ability/item
@@ -499,9 +502,7 @@ impl<'battle> BattleState<'battle> {
             self, move_action) {
             return (false, "But it failed!".to_string());
         }
-
         
-
         // Field checks
         let source_poke = self.get_active(move_action.source);
         if let Some(source_act_poke) = source_poke {
@@ -510,103 +511,11 @@ impl<'battle> BattleState<'battle> {
                 return (false, format!("{source_act_poke} flinched!")) // skip flinching, add message
             }
         }
+        
+        // Ability check
+        // Item check
 
         (true, "".to_string())
-    }
-
-    /// Mutate the battle state
-    #[deprecated(note="Modifies state directly")]
-    fn perform_move(&mut self, move_action: &mut MoveAction) -> &Self {
-        
-        let source_act_pkmn = self.get_active_mut(move_action.source).expect("source must exist");
-        let power = move_action.pkm_move.power;
-        let move_type = move_action.pkm_move.r#type;
-
-        let atk_stat = match move_action.pkm_move.category {
-            Physical => source_act_pkmn.get_active_stat(PokemonStatName::ATTACK),
-            Special => source_act_pkmn.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
-            _ => 1
-        };
-        let is_stab = [Physical, Special].contains(&move_action.pkm_move.category)
-            && source_act_pkmn.trained_pokemon.pokemon.has_type(move_action.pkm_move.r#type);
-        let num_targets = move_action.targets.len();
-        let mut result_act_vec: Vec<BattleAction> = vec![];
-
-        // Calculate everything per target from left->right
-        for target_position in &move_action.targets {
-            let target_pkmn = self.get_active_mut(*target_position).expect("target must exist");
-            
-            let poke = &target_pkmn.trained_pokemon.pokemon;
-            println!("*Start damage calc {} for target {poke}", move_action.pkm_move.name);
-
-            // TODO: Calculate crit, including status and etc effects
-            // let is_crit = false;
-
-            let def_stat = match &move_action.pkm_move.category {
-                Physical => target_pkmn.get_active_stat(PokemonStatName::DEFENSE),
-                Special => target_pkmn.get_active_stat(PokemonStatName::SPECIAL_DEFENSE),
-                _ => 1
-            };
-
-            let mut def_dmg = pkmn_damage_formula(power, atk_stat, def_stat);
-            // TODO: I'll do this later
-            // let rng_roll = [0.85, 100.0]; 
-
-            let mut dmg_modifier_list:VecDeque<f64> = VecDeque::new();
-
-            // Damage modifiers
-            let stab_mult = if is_stab { 1.5
-                // TODO: Adaptability & tera checks
-            } else { 1.0 };
-
-            dmg_modifier_list.push_back(stab_mult);
-            
-            // target multiplier
-            let multi_target_mult = if num_targets > 1 {0.75} else {1.0};
-            dmg_modifier_list.push_back(multi_target_mult);
-            
-            // Type multiplier
-            let def_type_mult = target_pkmn.get_type_mult(move_type) as f64;
-            // TODO: If 0, count as not applicable
-            dmg_modifier_list.push_back(def_type_mult);
-            
-            // status modifiers, burn
-
-            // other modifiers
-            
-            // Finally sum these up
-            while let Some(modifier) = dmg_modifier_list.pop_front() {
-                def_dmg = mult_and_round(def_dmg, modifier);
-            };
-            let calc_dmg = def_dmg;
-            
-            // Subtract health, then roll and apply secondary effects
-            let dmg_effect = DamageEffect {
-                target: *target_position,
-                calc_damage: calc_dmg,
-                damage_source: DamageSource::Move(move_action.pkm_move.name),
-                dmg_after_effect: (move_action.source, None)
-            };
-
-            // Create a damage effect that the Battle system can resolve
-            // Any health changes resolve in damage step
-            result_act_vec.push(BattleAction::Damage(dmg_effect));
-            
-        
-        }
-        
-        // Check after_hit effects
-        let hit_effects = move_action.pkm_move.after_hit(self);
-        let resolved_actions = hit_effects.iter().map(|pre_action|
-            BattleState::convert_to_action(pre_action, move_action.source));
-        for act in resolved_actions {
-            result_act_vec.push(act);
-        }
-        while let Some(action) = result_act_vec.pop() {
-            self.action_queue.push_front(action);
-        }
-
-        self
     }
 
     /// Get Recoil/Heal damage from effect
@@ -627,38 +536,6 @@ impl<'battle> BattleState<'battle> {
             )
         }
         None
-    }
-
-    /// Perform stat modifier change for a single pokemon
-    #[deprecated(note="use sim_stat & perform_stat_change instead")]
-    fn perform_stat(&mut self, stat_action: StatAction) -> &Self {
-
-        for target in stat_action.targets {
-            let target_poke = self.get_active_mut(target);
-            if target_poke.is_none() { continue; }
-
-            // TODO: Check if stat is blocked by ability or other (forgor)
-            let target_act_pkmn = target_poke.expect("Non-null");
-            
-            let stat_ref= target_act_pkmn.get_active_stat_boost(stat_action.stat_name);
-            let pre_boost = *stat_ref;
-            *stat_ref += stat_action.change;
-
-
-            let stat_changed = pre_boost != *stat_ref;
-            // TODO: Check if abilities trigger on ability change
-            // TODO: Log flag for stat change
-            if (stat_changed) {
-                let change_dir = if [PokemonStatModifier::MINUS_1, PokemonStatModifier::MINUS_2].contains(&stat_action.change) {"fell"} else {"rose"};
-                let final_value = *stat_ref;
-                    println!("{}'s {} {change_dir} [{:?}]!", target_act_pkmn.trained_pokemon.pokemon,
-                    stat_action.stat_name, 
-                    final_value,
-                );
-            }
-        }
-        
-        self
     }
 
     /// Simulate a stat change
@@ -706,8 +583,6 @@ impl<'battle> BattleState<'battle> {
 
         // TODO: check item/ability/field effects for volatile status block/change
 
-        // let mut b_clone = self;
-        // let mut b_clone = clone_state;
         let target_poke = self.get_active_mut(b_position);
 
         if let Some(target_act_poke) = target_poke {
@@ -805,27 +680,7 @@ impl<'battle> BattleState<'battle> {
         }
 
         return bypass_charge;
-        
 
-
-        // let source_act_pkmn = 
-        //     self.get_active_mut(move_action.source).expect("Source pkmn must exist");
-        
-        // source_act_pkmn.battle_status.set_flag(PokemonBattleState::CHARGING);
-
-        // // If Power-Herb, skip to next stage
-        // // Or weather change
-        // let message = match move_action.pkm_move.name {
-        //     PokemonMoveName::Solar_Beam => format!("{} absorbed sunlight!",
-        //         move_action.source),
-        //     _ => format!("{} is charging!", move_action.pkm_move.name) 
-        // };
-
-        // source_act_pkmn.last_move_used = Some(move_action.pkm_move.name);
-
-        // // let mut act_strs = &mut self.action_strs;
-        // self.action_strs.push(format!("{message}"));
-        // false
     }
 
     fn gen_pre_charge_action(&self, move_action:&MoveAction) -> (bool, Vec<BattleAction<'battle>>) {
@@ -1115,19 +970,19 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Base power calculation for moves, TODO: covering special power calcs
-    fn base_power_calc(move_action: &MoveAction, act_poke:&ActivePokemon) -> i32 {
-        let base_power = move_action.pkm_move.power;
+    // fn base_power_calc(move_action: &MoveAction, act_poke:&ActivePokemon) -> i32 {
+    //     let base_power = move_action.pkm_move.power;
 
-        let atk_stat = match move_action.pkm_move.category {
-            Physical => act_poke.get_active_stat(PokemonStatName::ATTACK),
-            Special => act_poke.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
-            _ => 1
-        };
+    //     let atk_stat = match move_action.pkm_move.category {
+    //         Physical => act_poke.get_active_stat(PokemonStatName::ATTACK),
+    //         Special => act_poke.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
+    //         _ => 1
+    //     };
 
-        // TODO: Special power calcs
+    //     // TODO: Special power calcs
 
-        return base_power
-    }
+    //     return base_power
+    // }
 
     fn calc_move_damage(pkm_move: &mut PokemonMove,
         num_valid_targets:usize, 
@@ -1147,7 +1002,7 @@ impl<'battle> BattleState<'battle> {
             // TODO: Add custom power flag 
             if pkm_move.flags.has_flag(PokemonMoveFlag::WEATHER_MODIFY) {
                 effective_move = get_weather_modify_move(battle_state.weather, pkm_move.name);
-                // base_power = battle_state.calc_custom_base_power(move_action);
+                
             }
             if pkm_move.flags.has_flag(PokemonMoveFlag::CUSTOM_POWER) {
                 effective_move = get_custom_base_power(battle_state, atk_poke, pkm_move.name);
@@ -1218,28 +1073,7 @@ impl<'battle> BattleState<'battle> {
         }
 
 
-    /// Return base power value
-    fn calc_custom_base_power(&self, move_action: &MoveAction) -> i32 {
-        match move_action.pkm_move.name {
-            // TODO: Data based script?
-            PokemonMoveName::Solar_Beam => {
-                if ![BattleWeatherState::NONE, BattleWeatherState::SUN].contains(&self.weather) {
-                    return 60 //
-                }
-                return 120
-            },
-            PokemonMoveName::Weather_Ball => {
-                if self.weather == BattleWeatherState::NONE {
-                    return 50
-                } else {
-                    return 100
-                }
-            }
-            _ => 1
-        }
-    }
-
-    /// calculate non-target pokemon accuracy
+    /// calculate pre-target pokemon accuracy
     fn calc_move_accuracy(move_action: &MoveAction, 
         source_act_pkmn:&ActivePokemon) -> PkmnRational {
         
@@ -1268,7 +1102,7 @@ impl<'battle> BattleState<'battle> {
     }
 
 
-    /// Return if this is a valid target for this
+    /// Return if this is a valid target for this move
     fn is_valid_target(&self, move_action: &MoveAction, target_pos:BattlePosition) -> bool {
 
         if let Some(poke) = self.get_active(target_pos) {
@@ -1347,6 +1181,7 @@ impl<'battle> BattleState<'battle> {
         result_bcs
     }
 
+    /// Perform a statistic change on the pokemon
     fn exec_stat_change(&mut self, target_pos:BattlePosition, stat_action: &StatAction) {
         let target_poke = self.get_active_mut(target_pos);
         let target_act_pkmn = target_poke.expect("Non-null");
@@ -1356,14 +1191,7 @@ impl<'battle> BattleState<'battle> {
         *stat_ref += stat_action.change;
     }
 
-    #[deprecated(note="Modifies state directly")]
-    fn perform_status_change(&mut self, target_pos:BattlePosition, status_action: &StatusAction) {
-        let target_poke = self.get_active_mut(target_pos);
-        let target_act_pkmn = target_poke.expect("Must be non-null");
-
-        target_act_pkmn.status = status_action.status;
-    }
-
+    /// Perform a status change on the battle state
     fn exec_status_change(&mut self, 
         position:BattlePosition, 
         // target_act_poke:&mut ActivePokemon,
@@ -1392,32 +1220,6 @@ impl<'battle> BattleState<'battle> {
 
         if target_act_poke.status == PokemonStatus::NONE {
             target_act_poke.status = status_action.status
-        }
-    }
-
-    /// TODO: Damage actions, might fold this into perform move
-    /// But also needs to handle non-move actions
-    #[deprecated(note="Modifies state directly")]
-    fn perform_damage(&mut self, dmg_effect:DamageEffect) {
-
-        // TODO: Check if any abilities block/mitigate the damage
-        // NOTE: Might be bad to check here, lets assume damage is always accurate
-
-        let target_pkmn = self.get_active_mut(dmg_effect.target).unwrap();
-        let dmg_done = dmg_effect.calc_damage.min(target_pkmn.current_hp);
-        // let final_hp = (target_pkmn.current_hp-dmg_effect.calc_damage).max(0);
-
-        // Trigger any health effects (abilities, berries, etc)
-        // Trigger if recoil/recovery if move permits (or do within move)
-        target_pkmn.current_hp -= dmg_done;
-        
-        println!("{}", dmg_effect.damage_source);
-
-        // If HP is 0, faint and perform fainting actions
-        if target_pkmn.current_hp == 0 {
-            self.action_queue.push_front(
-                BattleAction::Faint(dmg_effect.target)
-            );
         }
     }
 
@@ -1510,48 +1312,6 @@ impl<'battle> BattleState<'battle> {
         vec![BattleContainer::one(self.clone(), Some(heal_msg))]
     }
 
-    pub fn perform_turn(&mut self) {
-        // TODO: sort action queue
-        // Iter until action_queue is empty (any lingering moves should be status)
-
-        // Can you perform this move in this battle state
-        while self.action_queue.len() > 0 {
-            
-            let action = match self.action_queue.pop_front() {
-                Some(action) => action,
-                None => break
-            };
-
-            match action {
-                BattleAction::Move(mut move_action) => {
-                    // if !self.can_perform_move(&move_action.pkm_move, &move_action) {
-                    //     continue
-                    // };
-                    println!("{} used {}!",
-                        self.get_active_mut(move_action.source).unwrap(), 
-                        move_action.pkm_move.name);
-                    self.perform_move(&mut move_action);
-                }
-                BattleAction::Stat(stat_actions) => {
-                    // Latent Stat Actions, no condition checks
-                    for stat_action in stat_actions {
-                        self.perform_stat(stat_action);
-                    }
-                }
-                BattleAction::Damage(dmg_effect) => {
-                    self.perform_damage(dmg_effect)
-                }
-                _ => {
-                    println!("Not yet implemented {action}")
-                }
-            }
-
-
-        }
-        
-
-    }
-
     /// Create a list of battle states created from 1 action on the action queue
     #[allow(unused_mut)] // some actions need to be modified
     pub fn sim_action(&mut self, mut action:BattleAction) -> Vec<BattleContainer<'battle>> {
@@ -1584,7 +1344,6 @@ impl<'battle> BattleState<'battle> {
                 return self.sim_status(status_action)
             }
             BattleAction::Damage(mut dmg_action) => {
-                // return self.perform_damage(dmg_action);
                 return self.sim_damage(dmg_action);
                 // TODO: implement this
             },
@@ -1652,32 +1411,6 @@ impl<'battle> BattleState<'battle> {
         // Mark turn is complete
         self.turn_complete = true;
         self
-    }
-
-    /// Convert a PreAction to a BattleAction
-    #[deprecated]
-    pub fn convert_to_action (pre_action:&BattlePreAction, source:BattlePosition) 
-    -> BattleAction<'battle> {
-        match pre_action {
-            BattlePreAction::Stat(stat_change) => {
-                let stat_acts = 
-                stat_change.iter().map(|stat_c| {
-                        StatAction {
-                            stat_name: stat_c.name,
-                            change: stat_c.change,
-                            // NOTE: Only Moves can have ambigious targeting so this should not create new universes
-                            targets: BattleState::convert_target_to_position(
-                                stat_c.target_type, 
-                                source),
-                            pct_chance: PkmnRational::from_float(stat_c.accuracy)
-                        }
-                });
-                BattleAction::Stat(
-                    stat_acts.collect()
-                )
-            }
-            _ => unimplemented!("Not yet implemented this action")
-        }
     }
 
     /// Convert a MoveEffect to an Action with Damage/Status/etc
