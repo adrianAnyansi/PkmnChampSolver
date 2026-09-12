@@ -30,7 +30,7 @@ I gotta focus up and decide what to do-
 - Team mechanics & Trained Pokemon
 - Beginning / End of battle
 
-
+Working on Switch action
 
 There are a few moves to do but then abilities and items come next
 The other issue is team and switch mechanics don't exist

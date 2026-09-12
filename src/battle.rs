@@ -22,7 +22,7 @@ use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, 
 use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
-use crate::math::{PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
+use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
 use crate::pokemon::{self, Pokemon, PokemonAbilityName, PokemonName, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
@@ -80,8 +80,11 @@ pub enum BattleAction<'battle> {
     ForceMove(BattlePosition, PokemonMoveName),
     
     // TODO: Transition stat/status/protect to this version
-    /// Subset to contain % action effects, no miss case
-    PctAction(BattlePctAction, BattlePosition, PkmnRational)
+    /// Subset to contain % action effects, no miss case. <action, target, %>
+    PctAction(BattlePctAction, BattlePosition, PkmnRational),
+
+    /// PctActions with multiple targets
+    PctActions(BattlePctAction, [Option<BattlePosition>; 4], PkmnRational)
 }
 
 impl core::fmt::Display for BattleAction<'_> {
@@ -468,7 +471,7 @@ impl<'battle> BattleState<'battle> {
             // TODO: Check if blocked by pokemon ability/item
             // TODO: Check field conditions
 
-            let valid_targets:Vec<&BattlePosition> = stat_action.targets.iter().filter(
+            let valid_targets:Vec<BattlePosition> = stat_action.targets.iter().filter(
                 |pos:&&BattlePosition| {
                     let t_act_poke = self.get_active(**pos);
 
@@ -489,10 +492,10 @@ impl<'battle> BattleState<'battle> {
                     }
                     true
                 }
-            ).collect();
+            ).copied().collect();
             
-            // NOTE: ugh- the position is getting copied by iter()
-            return valid_targets.iter().copied().copied().collect()
+            
+            valid_targets
 
         }
 
@@ -547,6 +550,23 @@ impl<'battle> BattleState<'battle> {
         let valid_targets = self.can_perform_stat(&stat_action);
         let prob_set = gen_power_set(vec![
             stat_action.pct_chance; valid_targets.len()]);
+
+        let apply_func = 
+            |cloned_state:&mut BattleState, target_idx:u8| -> String {
+                let position = valid_targets[target_idx as usize];
+                cloned_state.exec_stat_change(position, &stat_action);
+                // stat
+                let target_poke = cloned_state.get_active(position).unwrap();
+                let stat_msg = format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
+                    stat_action.stat_name, 
+                    target_poke.get_active_stat_modf(stat_action.stat_name),
+                );
+                stat_msg
+            };
+        
+        return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
+        // Old implementation
+
         let mut result_vecs:Vec<BattleContainer> = vec![];
 
         for (bin_comb, rat) in prob_set.iter().enumerate() {
@@ -563,7 +583,7 @@ impl<'battle> BattleState<'battle> {
                 }
                 clone_state.exec_stat_change(*target_pos, &stat_action);
                 let target_poke = clone_state.get_active(*target_pos).unwrap();
-                        stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
+                stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
                     stat_action.stat_name, 
                     target_poke.get_active_stat_modf(stat_action.stat_name),
                 ));
@@ -1128,30 +1148,34 @@ impl<'battle> BattleState<'battle> {
         
     }
     
-    // TODO: Complete this later, its important
-    fn spawn_bcs_for_power_set<F> (self, prob_set:&[PkmnRational], 
-        mut apply_func:F, mut fail_func:F) -> 
-        Vec<BattleContainer<'battle>>
-        where
-            F: FnMut(&mut BattleState<'battle>, i32),
-         {
-
+    /// Spawn N BattleContainers based on multiple independent* events with apply & fail functions
+    fn spawn_bcs_for_power_set<F> (&self, prob_set:&[PkmnRational], 
+        mut apply_func:F, mut fail_func:Option<F>
+    ) -> Vec<BattleContainer<'battle>>
+        where F: FnMut(&mut BattleState<'battle>, u8) -> String,
+    {
         let mut result_bcs = vec![];
-        // indep events are based on targets so far
-        let valid_targets:Vec<BattlePosition> = Vec::new();
-        for bin_comb in 1..prob_set.len() {
-            if prob_set[bin_comb as usize] == PkmnRational::ZERO() {continue;}
+        
+        // Get bin_comb (each indep event occuring) and prob_i (probability)
+        for (bin_comb, prob_i) in prob_set.iter().enumerate() {
+            if *prob_i == PkmnRational::ZERO() {continue;}
         
             let mut int_clone = self.clone();
-            for (idx,target_pos) in valid_targets.iter().enumerate() {
-                if (bin_comb >> idx) & 0b1 == 1 {
-                    apply_func(&mut int_clone, bin_comb as i32);
-                    // int_clone.perform_stat_change(*target_pos, &stat_action);
+            let mut ret_strings: Vec<String> = vec![];
+
+            // For each event, apply change or transform
+            for idx in 0..prob_set.len() {
+                if BinCombination8::index(bin_comb as u8, idx as u8) {
+                    let app_str = apply_func(&mut int_clone, idx as u8);
+                    ret_strings.push(app_str);
+                } else if let Some(ref mut fail_f) = fail_func {
+                    let fail_str = fail_f(&mut int_clone, idx as u8);
+                    ret_strings.push(fail_str);
                 }
             }
             result_bcs.push(
-                BattleContainer::simple(int_clone, 
-                prob_set[bin_comb as usize])
+                BattleContainer::simple(int_clone, *prob_i)
+                .add_msg(ret_strings.join("\n"))
             );
         }
         result_bcs
@@ -1356,7 +1380,7 @@ impl<'battle> BattleState<'battle> {
             }
             BattleAction::PctAction(BattlePctAction::AddFlag(flag, set_value), position , accuracy ) => {
                 // NOTE: Should be used for no miss cases
-                let vol_status = flag; // TODO: Check subset
+                let vol_status = flag; // TODO: Check volatile subset status
                 let apply_func = |cloned_state:&mut BattleState| {
                     cloned_state.exec_vol_status(vol_status, position)
                 };
@@ -1366,7 +1390,21 @@ impl<'battle> BattleState<'battle> {
                 // return BattleContainer::simple(battle_state, pct_chance)
                 // return BattleState::sim_vol_status(self, vol_status, position, accuracy);
                     
-            }
+            },
+            BattleAction::PctActions(
+                BattlePctAction::Stat(stat_action), targets, rat) => {
+
+                    let valid_targets: Vec<BattlePosition> = targets.into_iter().flatten().collect();
+                    let prob_set = gen_power_set(vec![rat; valid_targets.len()]);
+                    let apply_func = 
+                    |cloned_state:&mut BattleState, target_idx:u8| {
+                        let position = valid_targets[target_idx as usize];
+                        cloned_state.exec_stat_change(position, &stat_action);
+                        String::from("Stringy")
+                    };
+
+                    return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
+                },
             // BattleAction::VolatileStatus(position, vol_status, accuracy) => {
             //     return self.sim_vol_status(vol_status, position, accuracy)
             // }

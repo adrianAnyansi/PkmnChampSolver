@@ -24,11 +24,15 @@ impl PkmnRational {
     const REDUCE_MIN:u32 = 10_000;
     
     pub fn ONE() -> PkmnRational {
-        return PkmnRational { numer: 1, demon: 1 }
+        PkmnRational { numer: 1, demon: 1 }
     }
 
     pub fn ZERO() -> PkmnRational {
-        return PkmnRational { numer: 0, demon: 1 }
+        PkmnRational { numer: 0, demon: 1 }
+    }
+
+    pub fn HALF() -> PkmnRational {
+        PkmnRational { numer: 1, demon: 2}
     }
 
     pub fn float(&self) -> f64 {
@@ -36,10 +40,7 @@ impl PkmnRational {
     }
 
     pub fn new(numer:i32, demon:u32) -> PkmnRational{
-        return PkmnRational{
-            numer: numer,
-            demon: demon
-        }
+        PkmnRational{numer, demon }
     }
 
     /// Return fraction out of 100
@@ -276,6 +277,34 @@ pub fn get_random_int(low:u32, high:u32) -> u32 {
     return norm_seed
 }
 
+
+pub struct BinCombination8 {
+    pub binary: u8
+}
+
+impl BinCombination8 {
+    pub fn new(binary:u8) -> Self {
+        return BinCombination8 {binary}
+    }
+
+    pub fn idx(&self, index:u8) -> bool {
+        BinCombination8::index(self.binary, index)
+    }
+
+    pub fn index(binary:u8, index:u8) -> bool {
+        (binary >> index) & 0b1 == 1
+    }
+}
+
+// /// Implementation to hold arrays which have Optional values
+// struct NoneArray<T = std::any::Any>;
+
+// impl<T> NoneArray<T>
+// where T: std::any::Any {
+//     pub fn trim_none_array(none_array:[T]) {
+//         return none_array.into_iter().flatten().collect();
+//     }
+// }
 
 
 #[cfg(test)]

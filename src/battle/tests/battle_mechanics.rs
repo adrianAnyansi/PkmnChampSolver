@@ -146,6 +146,52 @@ fn test_stat_modifier_sim() {
 }
 
 #[test]
+fn test_multi_stat_modifier_sim() {
+    let mut root_bc = dummy_bc();
+    let bs = root_bc.battle_state.as_mut().unwrap();
+
+    let stat_action = StatAction {
+        targets: vec![BattlePosition::F1, BattlePosition::B1],
+        stat_name: ATTACK,
+        change: PokemonStatModifier::MINUS_5,
+        pct_chance: PkmnRational::HALF(),
+    };
+    // bs.action_queue.push_back(BattleAction::Stat(vec![stat_action]));
+    bs.action_queue.push_back(BattleAction::PctActions(
+        BattlePctAction::Stat(stat_action), [Some(BattlePosition::F1), Some(BattlePosition::B1), None, None], PkmnRational::HALF()
+    ));
+
+    assert_eq!(bs.action_queue.len(), 1);
+
+    root_bc.sim_next_action();
+
+    assert_eq!(root_bc.battle_ctns.len(), 4);
+
+    assert_eq!(root_bc.battle_ctns[0].pct_chance, PkmnRational::new(1, 4), "Percentage change should be 1/4");
+    let no_bs = root_bc.battle_ctns[0].battle_state.as_mut().unwrap();
+    assert_eq!(no_bs.action_queue.len(), 0);
+    assert_eq!(no_bs.f_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(),
+        PokemonStatModifier::ZERO, "Effect missed, Attack unchanged");
+    assert_eq!(no_bs.b_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(),
+        PokemonStatModifier::ZERO, "Effect missed, Attack unchanged");
+
+    let one_bs = root_bc.battle_ctns[1].battle_state.as_mut().unwrap();
+    assert_eq!(one_bs.action_queue.len(), 0);
+    assert_eq!(one_bs.f_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(),
+        PokemonStatModifier::MINUS_5, "Effect hit, Attack lowered");
+    assert_eq!(one_bs.b_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(),
+        PokemonStatModifier::ZERO, "Effect missed, Attack unchanged");
+    
+    assert_eq!(root_bc.battle_ctns[3].pct_chance, PkmnRational::new(1, 4), "Percentage change should be 1/4");
+    let both_bs = root_bc.battle_ctns[3].battle_state.as_mut().unwrap();
+    assert_eq!(both_bs.action_queue.len(), 0);
+    assert_eq!(both_bs.f_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(),
+        PokemonStatModifier::MINUS_5);
+    assert_eq!(both_bs.b_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(),
+        PokemonStatModifier::MINUS_5);
+}
+
+#[test]
 fn test_pct_action_flinch() {
     let mut root_bc = dummy_bc();
     let bs = root_bc.battle_state.as_mut().unwrap();
