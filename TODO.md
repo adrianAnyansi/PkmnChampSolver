@@ -5,14 +5,11 @@ I need to finish all the moves, and I need better testing cause I'm worrying thi
 
 ## Today
 --- 
-Update stat_Action & sim_stat to take 
-N targets, 1 stat + multipler
+Want to avoid major refactor like statAction again, I'm tired
 
-I did the diagram in the shower, so while this sucks on pct based hit, the complexity of multi-target stat is just too much.
-The worst case is 3 extra intermediate battle states but I dont have overlap like I intitially anticipated
-
-
-Rage Powder logic/redirection
+- Go back to Team/Switch actions
+    With no separation of Active/Inactive, I will just keep Active while clearing in a return action
+    The f_poke will borrow the pokemon and then use return & enter function actions
 
 
 ## Moves to implement
@@ -51,6 +48,9 @@ The root BS does not need to be stored?
 Some sim_ functions need a base_clone since some actions will always occur (i.e move miss still triggers turnsActive, etc). Throwing away this clone would be a waste, and I will never reuse the OG again (in the case where I'm making a decision, i.e sim move 1,2,3,4. Since I will be editing the action_queue, these are no longer equivalent states. I want to save it but its just not possible)
 I would need to make base_clones anyways, lets not overthink it much
 
+
+NOTE: I need to think about source for certain actions
+some status/stat are blocked only if opposing, so a generic source object will be helpful and give me redundancy in the future
 
 
 ## Future todos and cleanup

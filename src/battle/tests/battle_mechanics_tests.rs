@@ -153,7 +153,6 @@ fn test_multi_stat_modifier_sim() {
     let stat_set = StatSet::make_stat_set(
         vec![(PokemonStatName::ATTACK, PokemonStatModifier::MINUS_5)]
     );
-    // bs.action_queue.push_back(BattleAction::Stat(vec![stat_action]));
     bs.action_queue.push_back(BattleAction::PctActions(
         BattlePctAction::Stat(stat_set), [Some(BattlePosition::F1), None, None, None], PkmnRational::HALF()
     ));
@@ -172,6 +171,7 @@ fn test_multi_stat_modifier_sim() {
     assert_eq!(root_bc.battle_ctns[0].battle_ctns[0].pct_chance, PkmnRational::HALF(), "Percentage change should be 1/2");
 
     // Need better way to get hit/result states for this correctly
+    // currently its P,F -> PP, PF, FP, FF
     let no_bs = root_bc.battle_ctns[1].battle_ctns[1].battle_state.as_mut().unwrap();
     assert_eq!(no_bs.action_queue.len(), 0);
     assert_eq!(no_bs.f_poke1.as_mut().unwrap().get_active_stat_boost(ATTACK).clone(),

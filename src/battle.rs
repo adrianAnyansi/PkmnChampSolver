@@ -7,10 +7,10 @@ pub mod battle_processor;
 pub mod data;
 
 #[cfg(test)]
-#[path = "battle/tests/move_test.rs"]
+#[path = "battle/tests/move_tests.rs"]
 mod move_test;
 #[cfg(test)]
-#[path = "battle/tests/battle_mechanics.rs"]
+#[path = "battle/tests/battle_mechanics_tests.rs"]
 mod battle_mechanics;
 
 
@@ -55,8 +55,6 @@ pub enum BattleAction<'battle> {
     Move(MoveAction<'battle>), 
     /// Status being enacted by move or effect
     Status(StatusAction),
-    /// Stat modifier change being enacted by move or effect
-    // Stat(Vec<StatAction>),
     /// Volatile status effect
     VolatileStatus(BattlePosition, PokemonBattleState, PkmnRational),
     /// Ability effect
@@ -183,14 +181,6 @@ pub struct MoveAction<'battle> {
     pub pkm_move: &'battle PokemonMove,
 }
 
-/// Stat Modifier Change being performed
-#[derive(Clone)]
-pub struct StatAction {
-    pub targets: Vec<BattlePosition>,
-    pub stat_name: PokemonStatName,
-    pub change: PokemonStatModifier,
-    pub pct_chance: PkmnRational
-}
 
 /// Status action being effected a pokemon
 #[derive(Clone)]
