@@ -5,6 +5,12 @@ I need to finish all the moves, and I need better testing cause I'm worrying thi
 
 ## Today
 --- 
+I'm realizing that doing the switch mechanics means doing stuff outside battle state. Need to think about encapsulation
+battle state needs to include the team, since that changes per STATE
+
+BattleContainer should contain Trained- actually I'm gonna worry about this at the decision stage.
+
+
 Want to avoid major refactor like statAction again, I'm tired
 
 - Go back to Team/Switch actions

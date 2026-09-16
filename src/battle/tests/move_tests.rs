@@ -89,23 +89,23 @@ fn test_rock_slide_flinches_before_heat_wave() {
 
     assert_eq!(hit_bc.battle_ctns.len(), 2);
     let flinch_idx = hit_bc.battle_ctns.iter().position(|bc| {
-        bc.battle_state.as_ref().unwrap().b_poke1.as_ref().unwrap()
+        bc.battle_state.as_ref().unwrap().get_active(BattlePosition::B1).unwrap()
             .battle_status.has_flag(PokemonBattleState::FLINCHING)
     }).unwrap();
     let flinch_bc = &mut hit_bc.battle_ctns[flinch_idx];
     let hit_state = flinch_bc.battle_state.as_ref().unwrap();
-    assert!(hit_state.b_poke1.as_ref().unwrap().battle_status
+    assert!(hit_state.get_active(BattlePosition::B1).unwrap().battle_status
         .has_flag(PokemonBattleState::FLINCHING), "Pokemon should flinch in this universe");
     assert!(hit_state.action_strs.iter().any(|message| message.contains("Garchomp")
         && message.contains("flinched!")));
     assert!(hit_state.action_queue.iter().any(|action| matches!(action, BattleAction::Move(move_action)
         if move_action.pkm_move.name == PokemonMoveName::Heat_Wave)));
 
-    let tyranitar_hp = hit_state.f_poke1.as_ref().unwrap().current_hp;
+    let tyranitar_hp = hit_state.get_active(BattlePosition::F1).unwrap().current_hp;
     flinch_bc.sim_next_action();
 
     let post_heat_wave_state = flinch_bc.battle_state.as_ref().unwrap();
-    assert_eq!(post_heat_wave_state.f_poke1.as_ref().unwrap().current_hp, tyranitar_hp);
+    assert_eq!(post_heat_wave_state.get_active(BattlePosition::F1).unwrap().current_hp, tyranitar_hp);
     assert!(post_heat_wave_state.action_strs.iter().any(|message|
         message.contains("Garchomp") && message.contains("flinched!")));
     assert!(post_heat_wave_state.action_queue.is_empty());
@@ -115,7 +115,7 @@ fn test_rock_slide_flinches_before_heat_wave() {
 fn test_solar_beam_takes_two_move_actions_to_damage() {
     let mut root_bc = dummy_bc();
     let solar_beam = get_move(PokemonMoveName::Solar_Beam);
-    let initial_hp = root_bc.battle_state.as_ref().unwrap().f_poke1.as_ref().unwrap().current_hp;
+    let initial_hp = root_bc.battle_state.as_ref().unwrap().get_active(BattlePosition::F1).unwrap().current_hp;
 
     BattleState::queue_move(
         &mut root_bc.battle_state.as_mut().unwrap().action_queue,
@@ -126,8 +126,8 @@ fn test_solar_beam_takes_two_move_actions_to_damage() {
     root_bc.sim_next_action();
 
     let charged_state = root_bc.battle_state.as_ref().unwrap();
-    assert_eq!(charged_state.f_poke1.as_ref().unwrap().current_hp, initial_hp);
-    assert!(charged_state.b_poke1.as_ref().unwrap().battle_status.has_flag(
+    assert_eq!(charged_state.get_active(BattlePosition::F1).unwrap().current_hp, initial_hp);
+    assert!(charged_state.get_active(BattlePosition::B1).unwrap().battle_status.has_flag(
         crate::battle::data::PokemonBattleState::CHARGING
     ));
 
@@ -143,7 +143,7 @@ fn test_solar_beam_takes_two_move_actions_to_damage() {
         .any(|action| matches!(action, BattleAction::Damage(_))));
 
     root_bc.sim_next_action();
-    assert!(root_bc.battle_state.as_ref().unwrap().f_poke1.as_ref().unwrap().current_hp < initial_hp);
+    assert!(root_bc.battle_state.as_ref().unwrap().get_active(BattlePosition::F1).unwrap().current_hp < initial_hp);
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn test_solar_beam_skips_charge_in_sun() {
     let solar_beam = get_move(PokemonMoveName::Solar_Beam);
     let battle_state = root_bc.battle_state.as_mut().unwrap();
     battle_state.weather = BattleWeatherState::SUN;
-    let initial_hp = battle_state.f_poke1.as_ref().unwrap().current_hp;
+    let initial_hp = battle_state.get_active(BattlePosition::F1).unwrap().current_hp;
 
     BattleState::queue_move(
         &mut battle_state.action_queue,
@@ -163,14 +163,14 @@ fn test_solar_beam_skips_charge_in_sun() {
     root_bc.sim_next_action();
 
     let battle_state = root_bc.battle_state.as_ref().unwrap();
-    assert!(!battle_state.b_poke1.as_ref().unwrap().battle_status.has_flag(
+    assert!(!battle_state.get_active(BattlePosition::B1).unwrap().battle_status.has_flag(
         crate::battle::data::PokemonBattleState::CHARGING
     ));
     assert!(battle_state.action_queue.iter()
         .any(|action| matches!(action, BattleAction::Damage(_))));
 
     root_bc.sim_next_action();
-    assert!(root_bc.battle_state.as_ref().unwrap().f_poke1.as_ref().unwrap().current_hp < initial_hp);
+    assert!(root_bc.battle_state.as_ref().unwrap().get_active(BattlePosition::F1).unwrap().current_hp < initial_hp);
 }
 
 #[test]
@@ -289,7 +289,7 @@ fn test_weather_ball_damage_boosts_and_changes_type_in_sun_with_dummy_bc() {
         battle_state.weather = weather;
 
         let weather_ball = get_move(PokemonMoveName::Weather_Ball);
-        let initial_hp = battle_state.f_poke1.as_ref().unwrap().current_hp;
+        let initial_hp = battle_state.get_active(BattlePosition::F1).unwrap().current_hp;
 
         BattleState::queue_move(
             &mut battle_state.action_queue,
@@ -305,8 +305,7 @@ fn test_weather_ball_damage_boosts_and_changes_type_in_sun_with_dummy_bc() {
             .battle_state
             .as_ref()
             .unwrap()
-            .f_poke1
-            .as_ref()
+            .get_active(BattlePosition::F1)
             .unwrap()
             .current_hp;
 

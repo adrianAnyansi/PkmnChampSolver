@@ -17,7 +17,7 @@ mod battle_mechanics;
 
 use crate::battle;
 use crate::battle::DamageAfterEffect::Drain;
-use crate::battle::data::{ActivePokemon, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonStatus};
+use crate::battle::data::{ActivePokemon, ActiveTeam, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonStatus};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
 use crate::pokemon::moves::{MoveEffect, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
@@ -301,10 +301,19 @@ pub enum MoveResultEnum {
 /// This can include intermediate states
 #[derive(Clone)]
 pub struct BattleState<'battle> {
-    pub f_poke1: Option<ActivePokemon<'battle>>,
-    pub f_poke2: Option<ActivePokemon<'battle>>,
-    pub b_poke1: Option<ActivePokemon<'battle>>,
-    pub b_poke2: Option<ActivePokemon<'battle>>,
+    /// Front facing team
+    pub f_team: ActiveTeam<'battle>,
+    /// Back facing team
+    pub b_team: ActiveTeam<'battle>,
+
+    /// front face pokemon, left
+    f_poke1: Option<usize>,
+    f_poke2: Option<usize>,
+
+    /// Back face pokemon, left
+    b_poke1: Option<usize>,
+    b_poke2: Option<usize>,
+
     /// Current Weather
     pub weather: BattleWeatherState,
     /// active terrain (only 1) on the field
@@ -334,11 +343,14 @@ impl<'battle> BattleState<'battle> {
 
     pub fn new () -> Self {
         BattleState {
+            f_team: ActiveTeam::empty(),
+            b_team: ActiveTeam::empty(),
+
             f_poke1: None,
             f_poke2: None,
             b_poke1: None,
             b_poke2: None,
-            // Will implement this properly later in the future idc rn
+
             weather: BattleWeatherState::NONE,
             terrain: BattleTerrain::NONE,
             effects: 0,
@@ -349,7 +361,7 @@ impl<'battle> BattleState<'battle> {
             turn_num: 1,
             action_num: 0,
             // Keep track of messages from actions/debug this frame
-            action_strs: Vec::new(),
+            action_strs: Vec::new(), // TODO: Move to battle container
             turn_complete: false
         }
     }
@@ -357,28 +369,45 @@ impl<'battle> BattleState<'battle> {
     pub fn simple (f_poke:ActivePokemon<'battle>, 
         b_poke:ActivePokemon<'battle>) -> Self {
             let mut bs = BattleState::new();
-            bs.f_poke1 = Some(f_poke);
-            bs.b_poke1 = Some(b_poke);
+            let f_idx = bs.f_team.add_poke(f_poke);
+            let b_idx = bs.b_team.add_poke(b_poke);
+
+            bs.send_out(BattlePosition::F1, f_idx);
+            bs.send_out(BattlePosition::B1, b_idx);
 
             bs
     }
 
-    fn get_default_poke_name (poke:&Option<ActivePokemon<'battle>>) -> String {
-        return poke.as_ref().map(|p| p.trained_pokemon.pokemon.name.to_string()).unwrap_or_else(|| "_".to_string());
+    pub fn send_out(&mut self, position: BattlePosition, team_index: usize) {
+        match position {
+            BattlePosition::F1 => self.f_poke1 = Some(team_index),
+            BattlePosition::F2 => self.f_poke2 = Some(team_index),
+            BattlePosition::B1 => self.b_poke1 = Some(team_index),
+            BattlePosition::B2 => self.b_poke2 = Some(team_index),
+        }
+    }
+
+    /// Get pokemon name
+    fn get_default_poke_name (poke:Option<&ActivePokemon<'battle>>) -> String {
+        return poke.as_ref().map(
+            |p| 
+            p.trained_pokemon.pokemon.name.to_string()).unwrap_or_else(|| "_".to_string()
+        );
     }
 
     fn get_front_poke(&self) -> String {
         format!("{} {}", 
-            BattleState::get_default_poke_name(&self.f_poke1),
-            BattleState::get_default_poke_name(&self.f_poke2))
+            BattleState::get_default_poke_name(self.get_active(BattlePosition::F1)),
+            BattleState::get_default_poke_name(self.get_active(BattlePosition::F2))
+        )
     }
 
     pub fn get_print_state(&self) -> String {
 
         let back_row_str = format!("{} {}", 
-            self.b_poke1.as_ref().map_or("_".to_string(), |poke| poke.to_string()),
-            // BattleState::get_default_poke_name(&self.b_poke1),
-            BattleState::get_default_poke_name(&self.b_poke2));
+            BattleState::get_default_poke_name(self.get_active(BattlePosition::B1)),
+            BattleState::get_default_poke_name(self.get_active(BattlePosition::B2))
+        );
 
         let field_state = format!("Weather: {}, Other: {}", 
             self.weather, self.terrain);
@@ -417,42 +446,21 @@ impl<'battle> BattleState<'battle> {
 
     fn get_active_mut<'a>(&'a mut self, position: BattlePosition) -> Option<&'a mut ActivePokemon<'battle>> {
         match position {
-            BattlePosition::F1 => self.f_poke1.as_mut(),
-            BattlePosition::F2 => self.f_poke2.as_mut(),
-            BattlePosition::B1 => self.b_poke1.as_mut(),
-            BattlePosition::B2 => self.b_poke2.as_mut(),
+            BattlePosition::F1 => self.f_team.get_mut(self.f_poke1.unwrap_or(100) as usize),
+            BattlePosition::F2 => self.f_team.get_mut(self.f_poke2.unwrap_or(100) as usize),
+            BattlePosition::B1 => self.b_team.get_mut(self.b_poke1.unwrap_or(100) as usize),
+            BattlePosition::B2 => self.b_team.get_mut(self.b_poke2.unwrap_or(100) as usize),
         }
     }
 
     pub fn get_active<'a>(&'a self, position: BattlePosition) -> Option<&'a ActivePokemon<'battle>> {
         match position {
-            BattlePosition::F1 => self.f_poke1.as_ref(),
-            BattlePosition::F2 => self.f_poke2.as_ref(),
-            BattlePosition::B1 => self.b_poke1.as_ref(),
-            BattlePosition::B2 => self.b_poke2.as_ref(),
+            BattlePosition::F1 => self.f_team.get(self.f_poke1.unwrap_or(100) as usize),
+            BattlePosition::F2 => self.f_team.get(self.f_poke2.unwrap_or(100) as usize),
+            BattlePosition::B1 => self.b_team.get(self.b_poke1.unwrap_or(100) as usize),
+            BattlePosition::B2 => self.b_team.get(self.b_poke2.unwrap_or(100) as usize),
         }
     }
-
-    /// Fixed-order [F1, F2, B1, B2] view of the 4 active slots, always in sync with the fields.
-    fn get_all_active<'a>(&'a self) -> [Option<&'a ActivePokemon<'battle>>; 4] {
-        [
-            self.f_poke1.as_ref(),
-            self.f_poke2.as_ref(),
-            self.b_poke1.as_ref(),
-            self.b_poke2.as_ref(),
-        ]
-    }
-
-    /// Mutable counterpart of [`BattleState::get_all_active`], same [F1, F2, B1, B2] order.
-    fn get_all_active_mut<'a>(&'a mut self) -> [Option<&'a mut ActivePokemon<'battle>>; 4] {
-        [
-            self.f_poke1.as_mut(),
-            self.f_poke2.as_mut(),
-            self.b_poke1.as_mut(),
-            self.b_poke2.as_mut(),
-        ]
-    }
-
 
     // Can perform checks
     // Check if stat is entirely blocked, if so quit simulation
@@ -1502,10 +1510,11 @@ impl<'battle> BattleState<'battle> {
         // Perish Song
         // Items/Abilities (speed order)
 
-        // TODO: Go through all abilties & etc to resolve end of turn stuff
+        // TODO: Go through all abilties & etc to resolve end of turn stuff ``
 
-        for poke in self.get_all_active_mut() {
-            let Some(act_poke) = poke else { continue };
+        use BattlePosition::*;
+        for pos in [F1, F2, B1, B2] {
+            let Some(act_poke) = self.get_active_mut(pos) else { continue };
             
             // clear volatile flags
             act_poke.battle_status.clear_flag(PokemonBattleState::FLINCHING)

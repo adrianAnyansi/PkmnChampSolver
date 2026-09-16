@@ -133,7 +133,7 @@ pub struct InActivePokemon<'battle> {
 }
 
 /// Represents an active pokemon slot including current hp, status and boosts
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ActivePokemon<'battle> {
     pub trained_pokemon: &'battle TrainedPokemon,
 
@@ -251,15 +251,68 @@ impl core::fmt::Display for ActivePokemon<'_> {
     }
 }
 
-
+#[derive(Clone, Copy)]
 pub struct ActiveTeam<'battle> {
-    pub pokemon: [ActivePokemon<'battle>; 6],
+    pub pokemon: [Option<ActivePokemon<'battle>>; 6],
     /// Mega tracking
     pub used_mega: bool,
     pub has_mega: bool
     // tera
     // gigantamax?
     // any other team based stuff here
+}
+
+impl<'battle> ActiveTeam<'battle> {
+    // TODO: Use Trained Pokemon instead
+
+    /// Create new team from pokemon
+    pub fn new_from_pokemon (pokemon_vec:Vec<ActivePokemon>) -> ActiveTeam<'_> {
+
+        let mut pokemon:[Option<ActivePokemon>; 6] = [None; 6];
+        for (idx, poke) in pokemon_vec.iter().enumerate() {
+            pokemon[idx] = Some(*poke);
+        }
+
+        ActiveTeam {
+            pokemon,
+            used_mega: false,
+            has_mega: true
+        }
+    }
+
+    pub fn empty () -> ActiveTeam<'battle> {
+        ActiveTeam::new_from_pokemon(vec![])
+    }
+
+    pub fn add_poke(&mut self, new_poke:ActivePokemon<'battle>) -> usize {
+
+        let mut empty_idx:usize = 0;
+        for poke in self.pokemon.iter() {
+            if poke.is_none() {
+                break
+            }
+            empty_idx += 1;
+        }
+        if empty_idx < self.pokemon.len() {
+            self.pokemon[empty_idx] = Some(new_poke);
+        }
+        // TODO: Need to error if no empty index
+        empty_idx
+    }
+
+    pub fn get(&self, index:usize) -> Option<&ActivePokemon<'battle>> {
+        if index >= self.pokemon.len() {
+            return None
+        }
+        self.pokemon[index].as_ref()
+    }
+
+    pub fn get_mut(&mut self, index:usize) -> Option<&mut ActivePokemon<'battle>> {
+        if index >= self.pokemon.len() {
+            return None
+        }
+        self.pokemon[index].as_mut()
+    }
 }
 
 

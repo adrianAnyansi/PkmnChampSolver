@@ -401,7 +401,7 @@ impl BitFlagValue128 for PokemonMoveFlag {
 }
 
 /// Move flag will have 128 slots, once enum increases, add another flag
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct PokemonBitFlag128<T = PokemonMoveFlag>
 where
     T: BitFlagValue128,
