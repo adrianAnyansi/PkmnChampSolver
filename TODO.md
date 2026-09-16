@@ -5,17 +5,9 @@ I need to finish all the moves, and I need better testing cause I'm worrying thi
 
 ## Today
 --- 
-I'm realizing that doing the switch mechanics means doing stuff outside battle state. Need to think about encapsulation
-battle state needs to include the team, since that changes per STATE
+Switch is done*, what next?
+Fainting? Moves? To keep me focused I wanted to only do mechanics in these teams. This now unlocks some things I was avoiding.
 
-BattleContainer should contain Trained- actually I'm gonna worry about this at the decision stage.
-
-
-Want to avoid major refactor like statAction again, I'm tired
-
-- Go back to Team/Switch actions
-    With no separation of Active/Inactive, I will just keep Active while clearing in a return action
-    The f_poke will borrow the pokemon and then use return & enter function actions
 
 
 ## Moves to implement
@@ -27,19 +19,20 @@ Knock Off - Item mechanic
 ## Current Thoughts
 ---
 
+Need to put the overall control of trainer choice into a note and thoughts 
+
+Finished switch, then returning to move implementation
+Then I'll do abilities
+
 I gotta focus up and decide what to do-
 - Moves (dependant on other things)
 - Abilties 
 - Items
 - Switch Action & Fainting
-- Team mechanics & Trained Pokemon
 - Beginning / End of battle
 
-Working on Switch action
 
-There are a few moves to do but then abilities and items come next
-The other issue is team and switch mechanics don't exist
-
+## Messaging thoughts
 
 Should do a review on messaging, its fragmented right now
 It would be nice to have very good logging on effects and things that happen with strings, as when the logic gets more complicated, it will be impossible to track

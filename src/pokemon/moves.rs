@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ANY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
+use crate::{battle::{ self, BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -32,12 +32,20 @@ pub enum BattleTarget {
     OPPONENT_ALL,
     /// Target you and your ally
     ALLY_ALL,
-    /// Target anyone on the field
-    ANY,
+    /// Target anyone (except self) on the field
+    ANY_EXCEPT_SELF,
     /// Target all users except self
     ALL_EXCEPT_SELF,
     /// Target all users including self
-    ALL_SELF
+    ALL_SELF,
+}
+
+use BattleTarget::*;
+impl BattleTarget {
+    /// Is this move a single target move
+    pub fn is_single_target(&self) -> bool {
+        return [OPPONENT, ALLY, ALLY_ANY, ANY_EXCEPT_SELF].contains(self)
+    }
 }
 
 #[allow(dead_code)]
@@ -61,9 +69,12 @@ pub struct PokemonMove {
 /// Describe an effect that occurs after a move/ability
 #[derive(Debug, Copy, Clone)]
 pub enum MoveEffect {
+    /// Flag effect
     Stat(StatSet, BattleTarget, PkmnRational),
     Status(PokemonStatus, BattleTarget, PkmnRational),
     General(BattleEffect, BattleTarget, PkmnRational),
+    /// Add flag to target
+    Add_Flag(PokemonBattleState, BattleTarget, PkmnRational),
     /// Charge move, Source, Target
     Charge(BattlePosition)
 }
@@ -133,7 +144,7 @@ impl<'simulation> PokemonMove {
             pp: 32,
             contact: false,
             priority: 0,
-            target_type: ANY,
+            target_type: ANY_EXCEPT_SELF,
             hit_actions: vec![],
             flags: PokemonBitFlag128::new(vec![])
         }
@@ -198,8 +209,7 @@ impl<'simulation> PokemonMove {
     }
 
     /// This is just for keeping track of unimplemented mechanics
-    pub fn add_dummy_flag(mut self,
-        flag:&str) -> Self {
+    pub fn add_dummy_flag(self, _flag:&str) -> Self {
             // TODO: Add custom flag for stuff
             self
         }
@@ -220,6 +230,15 @@ impl<'simulation> PokemonMove {
     {
         // let real_rat = rat.unwrap_or(PkmnRational::ONE());
         self.hit_actions.push(MoveEffect::General(b_effect, target_pos, rat));
+        self
+    }
+
+    pub fn add_battle_flag(mut self, battle_flag:PokemonBattleState,
+        target_pos:BattleTarget, rat:PkmnRational) -> Self
+    {
+        self.hit_actions.push(MoveEffect::Add_Flag(
+            battle_flag, target_pos, rat
+        ));
         self
     }
 
@@ -387,7 +406,10 @@ pub enum PokemonMoveFlag {
     HEAL_1_2HF,
 
     /// Move thaws source before doing anything
-    MOVE_THAW
+    MOVE_THAW,
+
+    /// All targetted moves focus this pokemon
+    CENTER_OF_ATTENTION,
 }
 
 pub trait BitFlagValue128: Copy {
@@ -531,8 +553,8 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PkmnRational::pct(10)),
         
         PokemonMoveName::Sleep_Powder => PokemonMove::status(
-            pkmn_move_name, GRASS, ANY
-        ).set_attr(0, 0.75, ANY)
+            pkmn_move_name, GRASS, ANY_EXCEPT_SELF
+        ).set_attr(0, 0.75, ANY_EXCEPT_SELF)
         .status_effect(SLEEP, PkmnRational::ONE(), OPPONENT)
         .add_flag(PokemonMoveFlag::POWDER),
 
@@ -632,7 +654,9 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
 
         Rage_Powder => PokemonMove::status(
             pkmn_move_name, BUG, SELF
-        ).add_dummy_flag("center_of_attention"),
+        ).add_dummy_flag("center_of_attention")
+        .add_battle_flag(PokemonBattleState::CENTER_OF_ATTENTION, BattleTarget::SELF, PkmnRational::ONE())
+        .add_flag(CENTER_OF_ATTENTION),
 
         Trick_Room => PokemonMove::status(
             pkmn_move_name, PSYCHIC, SELF)

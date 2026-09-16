@@ -15,10 +15,13 @@ pub enum PokemonBattleState {
     FLINCHING,
     /// Pokemon is charging for next turn
     CHARGING,
-    /// Confused state
+    /// Confused state TODO: Incomplete
     CONFUSED,
     /// Infatuation (in love) state
-    INFATUATION
+    INFATUATION,
+
+    /// Redirects all opponent targetted moves to this
+    CENTER_OF_ATTENTION, // TODO: Only 1 on each side of the field
 }
 
 impl BitFlagValue128 for PokemonBattleState {
@@ -266,7 +269,7 @@ impl<'battle> ActiveTeam<'battle> {
     // TODO: Use Trained Pokemon instead
 
     /// Create new team from pokemon
-    pub fn new_from_pokemon (pokemon_vec:Vec<ActivePokemon>) -> ActiveTeam<'_> {
+    pub fn new_from_pokemon (pokemon_vec:Vec<ActivePokemon<'battle>>) -> ActiveTeam<'battle> {
 
         let mut pokemon:[Option<ActivePokemon>; 6] = [None; 6];
         for (idx, poke) in pokemon_vec.iter().enumerate() {

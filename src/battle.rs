@@ -155,19 +155,19 @@ impl BattlePosition {
         }
     }
 
-    pub fn get_opposing_team(self) -> Vec<BattlePosition> {
+    pub fn get_opposing_team(self) -> [BattlePosition;2] {
         use BattlePosition::*;
         match self {
-            B1 | B2 => vec![F1,F2],
-            F1 | F2 => vec![B1,B2]
+            B1 | B2 => [F1,F2],
+            F1 | F2 => [B1,B2]
         }
     }
 
-    pub fn get_ally_team(self) -> Vec<BattlePosition> {
+    pub fn get_ally_team(self) ->  [BattlePosition;2] {
         use BattlePosition::*;
         match self {
-            B1 | B2 => vec![B1,B2],
-            F1 | F2 => vec![F1,F2]
+            B1 | B2 => [B1,B2],
+            F1 | F2 => [F1,F2]
         }
     }
 }
@@ -692,6 +692,7 @@ impl<'battle> BattleState<'battle> {
                 PokemonBattleState::FLINCHING => format!("{target_act_poke} flinched!"), // flinch is not shown until attacking
                 PokemonBattleState::CONFUSED => format!("{target_act_poke} is confused!"),
                 PokemonBattleState::INFATUATION => format!("{target_act_poke} is in love!"),
+                PokemonBattleState::CENTER_OF_ATTENTION => format!("{target_act_poke} became the center of attention!"),
                 _ => panic!("Invalid volatile status")
             };
             if msg != "" {
@@ -885,12 +886,14 @@ impl<'battle> BattleState<'battle> {
                         self.get_active(move_action.source).unwrap(), 
                         move_action.pkm_move.name);
         
+        // Center of attention redirection
+        self.exec_move_redirection(move_action);
+        
         // TODO: Do valid target function check
         let move_targets:Vec<(&ActivePokemon, &BattlePosition)> = move_action.targets.iter().filter_map(
             |position| {
-                let poke = self.get_active(*position);
-                if poke.is_some() {
-                    return Some((poke.unwrap(), position))
+                if let Some(poke) = self.get_active(*position) {
+                    return Some((poke, position))
                 } else {
                     return None
                 }
@@ -899,6 +902,7 @@ impl<'battle> BattleState<'battle> {
         .collect();
 
         // TODO: Set last_move_failed as false
+
 
         // List of actions per target
         let num_valid_targets = move_targets.len();
@@ -979,7 +983,8 @@ impl<'battle> BattleState<'battle> {
                 let effect_target_pos = match hit_action {
                     MoveEffect::Stat(_, battle_target, rat) |
                     MoveEffect::Status(_, battle_target, rat) |
-                    MoveEffect::General(_, battle_target, rat) 
+                    MoveEffect::General(_, battle_target, rat) |
+                    MoveEffect::Add_Flag(_, battle_target , rat )
                     => {
                         BattleState::convert_effect_target_to_position(
                             *battle_target, move_action.source, Some(**target_pos))
@@ -1000,45 +1005,13 @@ impl<'battle> BattleState<'battle> {
                             effect_target_pos)
                 };
 
-                // let b_action:Option<BattleAction> = match hit_action {
-                //     effect @ MoveEffect::Stat(stat_set, target_type, rat) => {
-                //         let stat_target_pos = BattleState::convert_effect_target_to_position(
-                //             *target_type, move_action.source, Some(**target_pos));
-
-                //         // NOTE: Stats are not combined*
-                //         Some(BattleState::convert_effect_to_baction(
-                //             effect,
-                //             stat_target_pos))
-                //         },
-                //     MoveEffect::General(BattleEffect::Protect, target, rat) => {
-                //         Some(BattleAction::Protect(active_move.name, 
-                //                 move_action.source, move_acc))
-                //     },
-                //     MoveEffect::General(BattleEffect::Flinch, target, rat) => {
-                //         let f_target_pos = BattleState::convert_effect_target_to_position(
-                //             *target, move_action.source, Some(**target_pos));
-                //         Some(BattleAction::PctAction(
-                //             BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true), 
-                //                 f_target_pos, *rat))
-                //         // Some(BattleAction::VolatileStatus(f_target_pos, 
-                //         //         PokemonBattleState::FLINCHING, *rat))
-                //     }
-                //     MoveEffect::Status(_, target, _rat) |
-                //     MoveEffect::General(_, target, _rat) => {
-
-                //         let status_target_pos = BattleState::convert_effect_target_to_position(
-                //             *target, move_action.source, Some(**target_pos));
-                        
-                //         Some(BattleState::convert_effect_to_baction(hit_action, status_target_pos))
-                //     },
-                //     _ => {println!("WARNING: MoveEffect not implemented"); None}
-                // };
-
                 if true {
                     // NOTE: hit_Action order should not matter*
                     result_act_vec.push(b_action);
                 }
             }
+
+            
             
             result_queue.push(result_act_vec);
 
@@ -1093,6 +1066,22 @@ impl<'battle> BattleState<'battle> {
         }
         // Now return all the new battle_states that occur
         result_bcs
+    }
+
+    fn exec_move_redirection(&self, move_action: &mut MoveAction) {
+        // TODO: Ignore if Stalwart or move flag
+        if move_action.pkm_move.target_type.is_single_target() {
+            let oppose_team = move_action.source.get_opposing_team();
+            let redirect_to = oppose_team.into_iter().find(|bp| {
+                if let Some(act_poke) = self.get_active(*bp) {
+                    return act_poke.battle_status.has_flag(PokemonBattleState::CENTER_OF_ATTENTION)
+                }
+                false
+            });
+            if let Some(redirect_target) = redirect_to {
+                move_action.targets = vec![redirect_target]
+            }
+        }
     }
 
     /// Base power calculation for moves, TODO: covering special power calcs
@@ -1597,12 +1586,16 @@ impl<'battle> BattleState<'battle> {
                     BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true), 
                         effect_target_pos, *rat)
             }
-            MoveEffect::General(battle_effect, target, rat ) => {
+            MoveEffect::General(battle_effect, _target, _rat ) => {
                 match battle_effect {
                     // TODO: Think about this
                     // BattleEffect::Flinch => BattleAction::SetFlag(target, (), ()),
                     _ => panic!("BattleEffect {:?} is not implemented, ignoring", battle_effect)
                 }
+            },
+            MoveEffect::Add_Flag(battle_flag, _target, rat ) => {
+                BattleAction::PctAction(BattlePctAction::AddFlag(*battle_flag, true), 
+                        effect_target_pos, *rat)
             },
             _ => panic!("Not like this")
         }
@@ -1615,16 +1608,20 @@ impl<'battle> BattleState<'battle> {
         match target {
             BattleTarget::SELF => vec![source],
             BattleTarget::ALL_EXCEPT_SELF => {
-                let mut vec = source.get_opposing_team();
+                let mut vec = source.get_opposing_team().to_vec();
                 vec.push(source.get_ally());
                 vec
             },
             BattleTarget::ALLY => vec![source.get_ally()],
-            BattleTarget::ALLY_ALL => source.get_ally_team(),
-            BattleTarget::ALLY_ANY => source.get_ally_team(),
-            BattleTarget::ANY => vec![F1, F2, B1, B2],
+            BattleTarget::ALLY_ALL => source.get_ally_team().to_vec(),
+            BattleTarget::ALLY_ANY => source.get_ally_team().to_vec(),
+            BattleTarget::ANY_EXCEPT_SELF => {
+                let mut vec = source.get_opposing_team().to_vec();
+                vec.push(source.get_ally());
+                vec
+            }
             BattleTarget::OPPONENT => vec![source.get_opposing()],
-            BattleTarget::OPPONENT_ALL => source.get_opposing_team(),
+            BattleTarget::OPPONENT_ALL => source.get_opposing_team().to_vec(),
             BattleTarget::ALL_SELF => vec![F1, F2, B1, B2],
         }
     }

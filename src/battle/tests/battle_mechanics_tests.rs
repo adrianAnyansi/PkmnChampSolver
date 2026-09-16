@@ -248,3 +248,53 @@ fn test_pct_action_flinch() {
     assert!(new_bs.get_active(BattlePosition::F1).unwrap().battle_status
         .has_flag(PokemonBattleState::FLINCHING));
 }
+
+#[test]
+/// Rage Powder should mark its user as center of attention, redirecting a
+/// single-target move even when that move was aimed at an ally instead
+fn test_rage_powder_redirects_ally_targeted_move() {
+    let mut bs = BattleState::new();
+
+    let f1_idx = bs.f_team.add_poke(ActivePokemon::quick(Charizard));
+    let f2_idx = bs.f_team.add_poke(ActivePokemon::quick(Garchomp));
+    let b1_idx = bs.b_team.add_poke(ActivePokemon::quick(Kingambit));
+
+    bs.send_out(BattlePosition::F1, f1_idx);
+    bs.send_out(BattlePosition::F2, f2_idx);
+    bs.send_out(BattlePosition::B1, b1_idx);
+
+    let mut root_bc = BattleContainer::simple(bs, PkmnRational::ONE());
+
+    let rage_powder = get_move(PokemonMoveName::Rage_Powder);
+    BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::F1, &rage_powder, vec![BattlePosition::F1]);
+
+    root_bc.sim_next_action(); // resolve move, queue the CENTER_OF_ATTENTION flag effect
+    root_bc.sim_next_action(); // apply the flag effect
+
+    let bs_after_rage_powder = root_bc.battle_state.as_ref().unwrap();
+    assert!(bs_after_rage_powder.get_active(BattlePosition::F1).unwrap().battle_status
+        .has_flag(PokemonBattleState::CENTER_OF_ATTENTION),
+        "F1 should be the center of attention after using Rage Powder");
+
+    // B1 targets its own ally (B2, which is empty) with Sleep Powder
+    let sleep_powder = get_move(PokemonMoveName::Sleep_Powder);
+    BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::B1, &sleep_powder, vec![BattlePosition::B1.get_ally()]);
+
+    root_bc.sim_next_action(); // resolve move: redirect to F1 and branch on accuracy
+
+    assert_eq!(root_bc.battle_ctns.len(), 2,
+        "Sleep Powder's accuracy should split the state into a miss and a hit container");
+
+    let hit_bc = &mut root_bc.battle_ctns[1];
+    assert_eq!(hit_bc.pct_chance, PkmnRational::from_float(sleep_powder.accuracy));
+
+    hit_bc.sim_next_action(); // apply the redirected sleep status effect
+
+    let hit_bs = hit_bc.battle_state.as_ref().unwrap();
+    assert_eq!(hit_bs.get_active(BattlePosition::F1).unwrap().status, PokemonStatus::SLEEP,
+        "Sleep Powder should be redirected onto the center-of-attention Pokemon (F1)");
+    assert_eq!(hit_bs.get_active(BattlePosition::B1).unwrap().status, PokemonStatus::NONE,
+        "Sleep Powder's original ally target should be unaffected");
+}
