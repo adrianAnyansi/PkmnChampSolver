@@ -378,13 +378,50 @@ impl<'battle> BattleState<'battle> {
             bs
     }
 
-    pub fn send_out(&mut self, position: BattlePosition, team_index: usize) {
+
+    // TEAM MECHANICS
+
+    fn get_active_idx_mut(&mut self, position: BattlePosition) -> &mut Option<usize> {
         match position {
-            BattlePosition::F1 => self.f_poke1 = Some(team_index),
-            BattlePosition::F2 => self.f_poke2 = Some(team_index),
-            BattlePosition::B1 => self.b_poke1 = Some(team_index),
-            BattlePosition::B2 => self.b_poke2 = Some(team_index),
+            BattlePosition::F1 => &mut self.f_poke1,
+            BattlePosition::F2 => &mut self.f_poke2,
+            BattlePosition::B1 => &mut self.b_poke1,
+            BattlePosition::B2 => &mut self.b_poke2,
         }
+    }
+
+    pub fn send_out(&mut self, position: BattlePosition, team_index: usize) {
+
+        // TODO: Change from InActivePokemon to ActivePokemon
+
+        // Add pokemon to the field
+        let position_ref = self.get_active_idx_mut(position);
+        *position_ref = Some(team_index);
+
+        if let Some( entered_poke) 
+        = self.get_active_mut(position) {
+
+            entered_poke.actions_taken = 0; // Reset actions taken
+        } else {
+            panic!("MissingNo Pokemon was sent out!")
+        }
+
+        // TODO: Trigger/Queue abilities/items with ON_ENTER flags
+    }
+
+    pub fn return_poke(&mut self, position: BattlePosition) {
+        // Trigger ON_EXIT abilities/items/etc
+        
+        // Clear battle_status*
+        let return_poke = self.get_active_mut(position).unwrap();
+
+        return_poke.battle_status.clear_all();
+        // Keep status & certain flags*
+        
+        // Remove pokemon from field
+        let field_index_ref = self.get_active_idx_mut(position);
+        *field_index_ref = None;
+        
     }
 
     /// Get pokemon name
@@ -825,7 +862,7 @@ impl<'battle> BattleState<'battle> {
     fn sim_move(&mut self, move_action: &mut MoveAction) -> Vec<BattleContainer<'battle>> {
 
         let source_mut = self.get_active_mut(move_action.source);
-        source_mut.unwrap().turns_active += 1;
+        source_mut.unwrap().actions_taken += 1;
 
         let source_act_pkmn = self.get_active(move_action.source).expect("source must exist");
 

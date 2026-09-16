@@ -143,7 +143,7 @@ pub struct ActivePokemon<'battle> {
     pub current_hp: i32,
     // pub move_history: Vec<PokemonMoveName>,
     /// How many turns active on the field
-    pub turns_active: u8,
+    pub actions_taken: u8,
     /// Flag to track protect in a row count
     pub consec_protect_count: u8,
     /// pointer to keep track of last move executed
@@ -166,7 +166,7 @@ impl<'battle> ActivePokemon<'battle> {
                 stat_modifier: [PokemonStatModifier::ZERO; 5],
                 trained_pokemon,
                 // move_history: Vec::new(),
-                turns_active: 0, // first turn effect counter
+                actions_taken: 0, // first turn effect counter
                 consec_protect_count: 0,
                 last_move_used: None,
                 last_move_failed: false,

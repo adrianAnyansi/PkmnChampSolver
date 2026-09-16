@@ -244,7 +244,7 @@ impl<'simulation> PokemonMove {
             // Draco_Meteor => move_action.
             Fake_Out => {
                 let source = battle_state.get_active(move_action.source);
-                source.unwrap().turns_active == 0
+                source.unwrap().actions_taken == 0
             }
             _ => return true
         }
@@ -450,6 +450,11 @@ where
 
     pub fn clear_flag(&mut self, flag_id: T) -> &mut Self {
         self.flag |= 0u128 << flag_id.as_u128();
+        self
+    }
+
+    pub fn clear_all(&mut self) -> &mut Self {
+        self.flag = 0;
         self
     }
 }

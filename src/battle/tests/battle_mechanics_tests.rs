@@ -91,6 +91,38 @@ fn test_move_accuracy_sim() {
         "There should be 4 containers, no-state, b1 hit, b2 hit and b1+b2 hit");
 }
 
+#[test]
+fn test_send_out_to_b2_places_pokemon_in_right_slot() {
+    let mut bs = BattleState::new();
+    let team_idx = bs.b_team.add_poke(ActivePokemon::quick(PokemonName::Charizard));
+
+    bs.send_out(BattlePosition::B2, team_idx);
+
+    let active_poke = bs.get_active(BattlePosition::B2)
+        .expect("B2 should contain the sent-out pokemon");
+    assert_eq!(active_poke.trained_pokemon.pokemon.name, PokemonName::Charizard);
+    assert_eq!(bs.b_poke2, Some(team_idx));
+}
+
+#[test]
+fn test_return_poke_clears_confusion_from_f2() {
+    let mut bs = BattleState::new();
+    let team_idx = bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Garchomp));
+
+    bs.send_out(BattlePosition::F2, team_idx);
+    bs.get_active_mut(BattlePosition::F2)
+        .unwrap()
+        .battle_status
+        .set_flag(PokemonBattleState::CONFUSED);
+
+    bs.return_poke(BattlePosition::F2);
+
+    assert_eq!(bs.f_poke2, None);
+    let returned_poke = bs.f_team.get(team_idx).unwrap();
+    assert!(!returned_poke.battle_status.has_flag(PokemonBattleState::CONFUSED),
+        "battle_status should be cleared when the Pokémon returns to the team");
+}
+
 fn dummy_bc<'battle>() -> BattleContainer<'battle> {
     let ttar_pkmn = ActivePokemon::quick(PokemonName::Tyranitar);
     let ven_pkmn = ActivePokemon::quick(PokemonName::Venusaur);
