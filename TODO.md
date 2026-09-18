@@ -1,17 +1,23 @@
 # TODO (Overview)
-Just moves from 2 teams, just 2 teams focus
+So there are 3 targets I can do
+1. Do end checks/turn and complete testing (needs choice)
+2. Finish all mechanic implementations, then finish choice/end/begin checks
 
-I need to finish all the moves, and I need better testing cause I'm worrying things won't work correctly-
+Im starting to grasp how far the project is from completion, and like its understandable, I knew the battle engine would be complicated but feels like every important mechanic has an edge case that sucks to code up, and I still havent done a full simulation test because the ridiculous amount of choice mechanics and messaging I have to do...
+ugh, its super demotivating-
+
+I think the best way to hammer out each move, each mechanic and leave choice mechanics for the end. Im just not gonna get any satisifaction from doing the simulation early, I'd love to simulate both teams with a full log & know the time required.
+
+So, back to the mechanics, and wide guard.
 
 ## Today
 --- 
 Switch is done*, what next?
 Fainting? Moves? To keep me focused I wanted to only do mechanics in these teams. This now unlocks some things I was avoiding.
 
-
+TrainedPokemon can lose their item, ability, type- I need even more classes great- best to treat them completely separately
 
 ## Moves to implement
-Rage Powder - Center of attention
 Wide Guard - Special Protect
 Light Screen - room effect + damage calc
 Knock Off - Item mechanic
@@ -60,12 +66,13 @@ some status/stat are blocked only if opposing, so a generic source object will b
 
 
 # Long Goal
-Need easier pokemon & move creation, going to make a central library to contain all
-Then more testing with spread moves
-Then I'll implment abilities
+Libraries
+    Need a library get moves, pokemon, etc on demand. 
+    I plan on making an interface that will create and return things as a simulation lifetime.
 
 Create something that checks all pokemon and selects a random move
     - Also need to add additional actions (mega, switching)
+    Will call it "TrainerChoice" or something
 
 Adding the condition that match ends when all pokemon on one side are dead
 

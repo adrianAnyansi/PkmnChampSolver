@@ -17,9 +17,9 @@ mod battle_mechanics;
 
 use crate::battle;
 use crate::battle::DamageAfterEffect::Drain;
-use crate::battle::data::{ActivePokemon, ActiveTeam, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonStatus};
+use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
-use crate::pokemon::moves::{MoveEffect, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
+use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
@@ -71,11 +71,15 @@ pub enum BattleAction<'battle> {
     /// Add this message to the battle state, no action
     Message(String),
 
+    /// TODO: Separate action of hit? Dunno
     HitAction(MoveAction<'battle>, String),
+
+
     /// Set flag on active pokemon, <position, state, set>
     SetFlag(BattlePosition, PokemonBattleState, bool),
     /// Force pokemon to use move
     ForceMove(BattlePosition, PokemonMoveName),
+
     
     // TODO: Transition stat/status/protect to this version
     /// Subset to contain % action effects, no miss case. <action, target, %>
@@ -106,9 +110,15 @@ impl core::fmt::Display for BattleAction<'_> {
 /// Subset of BattleAction with actions that typically have % of occurring
 #[derive(Clone)]
 pub enum BattlePctAction {
+    /// Add stat
     Stat(StatSet),
+    /// Add Status pokemon
     Status(PokemonStatus),
-    AddFlag(PokemonBattleState, bool)
+    /// Add battle_status flag
+    AddFlag(PokemonBattleState, bool),
+
+    /// Add Field status
+    AddField(BattleFieldEffect, bool)
 }
 
 
@@ -255,7 +265,7 @@ pub struct AddEffect {
 #[derive(Clone, Copy, Debug, PartialEq)] 
 pub enum BattleEffect {
     Flinch,
-    Trapped,
+    Trapped, 
     Confused,
     Infatuation,
     Drowsy,
@@ -319,7 +329,7 @@ pub struct BattleState<'battle> {
     /// active terrain (only 1) on the field
     pub terrain: BattleTerrain,
     /// Other effects not included yet
-    pub effects: i32,
+    pub effects: PokemonBitFlag128<PokemonFieldState>,
     /// Room moves (Trick, Wonder, Magic)
     pub room: i32,
     /// This will contain the many per battle effects that don't fit neatly
@@ -353,7 +363,7 @@ impl<'battle> BattleState<'battle> {
 
             weather: BattleWeatherState::NONE,
             terrain: BattleTerrain::NONE,
-            effects: 0,
+            effects: PokemonBitFlag128::<PokemonFieldState>::empty(),
             room: 0,
             internal_state: 0,
             // current_action: None,
@@ -885,6 +895,14 @@ impl<'battle> BattleState<'battle> {
         let move_msg = format!("{} used {}!",
                         self.get_active(move_action.source).unwrap(), 
                         move_action.pkm_move.name);
+
+        // Wide guard protection
+        if self.effects.has_flag(PokemonFieldState::WIDE_GUARD) && 
+            move_action.pkm_move.target_type.is_multi_target_opp() {
+                // Move is blocked by protect
+                return vec![BattleContainer::one(base_clone, 
+                    Some(format!("Move {} was blocked by Wide Guard!", move_action.pkm_move.name)))]
+            }
         
         // Center of attention redirection
         self.exec_move_redirection(move_action);
@@ -969,22 +987,17 @@ impl<'battle> BattleState<'battle> {
             
             // Process secondary effects and add to queue
             // -------------------------------------------------------------
-            use crate::pokemon::moves::MoveEffect;
+            // use crate::pokemon::moves::MoveEffect;
 
             // generate on hit effects to the action queue
 
             for hit_action in &active_move.hit_actions {
 
-                // TODO: All move_effects should contain targetting and pct_chance
-                // So the battle_action conversion is generic
-
-                // TODO: Why is this match repeated in the function, because of effect_target conversions?
-                // target is overridden to 1 target
                 let effect_target_pos = match hit_action {
-                    MoveEffect::Stat(_, battle_target, rat) |
-                    MoveEffect::Status(_, battle_target, rat) |
-                    MoveEffect::General(_, battle_target, rat) |
-                    MoveEffect::Add_Flag(_, battle_target , rat )
+                    MoveEffect::Stat(_, battle_target, _rat) |
+                    MoveEffect::Status(_, battle_target, _rat) |
+                    MoveEffect::General(_, battle_target, _rat) |
+                    MoveEffect::AddFlag(_, battle_target , _rat )
                     => {
                         BattleState::convert_effect_target_to_position(
                             *battle_target, move_action.source, Some(**target_pos))
@@ -1378,7 +1391,7 @@ impl<'battle> BattleState<'battle> {
         // Trigger any health effects (abilities, berries, etc)
         // TODO: Think about how to calc this easily into ratio
         // maybe compare ratio to threshold rational
-        let health_ratio =  final_hp / total_hp;
+        let _health_ratio =  final_hp / total_hp;
 
         // Trigger if recoil/recovery if move permits (or do within move)
         if let (target, Some((effect_type, modifier))) = dmg_effect.dmg_after_effect {
@@ -1423,7 +1436,7 @@ impl<'battle> BattleState<'battle> {
         let healing_done = heal_effect.calc_healing.max(total_hp - target_pkmn.current_hp);
 
         target_pkmn.current_hp += healing_done;
-        let final_hp = target_pkmn.current_hp;
+        let _final_hp = target_pkmn.current_hp;
 
         // TODO: Check anything that triggers from HP gain/etc
         // TODO: Think about message for healing which is different for multiple actions
@@ -1474,7 +1487,7 @@ impl<'battle> BattleState<'battle> {
                 // Check the protect_counter in the function
                 return self.sim_protect(move_name, position, accuracy);
             }
-            BattleAction::PctAction(BattlePctAction::AddFlag(flag, set_value), position , accuracy ) => {
+            BattleAction::PctAction(BattlePctAction::AddFlag(flag, _set_value), position , accuracy ) => {
                 // NOTE: Should be used for no miss cases
                 let vol_status = flag; // TODO: Check volatile subset status
                 let apply_func = |cloned_state:&mut BattleState| {
@@ -1593,7 +1606,7 @@ impl<'battle> BattleState<'battle> {
                     _ => panic!("BattleEffect {:?} is not implemented, ignoring", battle_effect)
                 }
             },
-            MoveEffect::Add_Flag(battle_flag, _target, rat ) => {
+            MoveEffect::AddFlag(battle_flag, _target, rat ) => {
                 BattleAction::PctAction(BattlePctAction::AddFlag(*battle_flag, true), 
                         effect_target_pos, *rat)
             },
@@ -1622,7 +1635,7 @@ impl<'battle> BattleState<'battle> {
             }
             BattleTarget::OPPONENT => vec![source.get_opposing()],
             BattleTarget::OPPONENT_ALL => source.get_opposing_team().to_vec(),
-            BattleTarget::ALL_SELF => vec![F1, F2, B1, B2],
+            BattleTarget::ALL_AND_SELF => vec![F1, F2, B1, B2],
         }
     }
 

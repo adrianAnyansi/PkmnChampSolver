@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ self, BattleEffect::{self, Flinch}, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
+use crate::{battle::{ BattleEffect, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -37,14 +37,23 @@ pub enum BattleTarget {
     /// Target all users except self
     ALL_EXCEPT_SELF,
     /// Target all users including self
-    ALL_SELF,
+    ALL_AND_SELF,
 }
 
 use BattleTarget::*;
 impl BattleTarget {
     /// Is this move a single target move
     pub fn is_single_target(&self) -> bool {
-        return [OPPONENT, ALLY, ALLY_ANY, ANY_EXCEPT_SELF].contains(self)
+        return [OPPONENT, ALLY, ALLY_ANY].contains(self)
+    }
+
+    /// Is this move a multi-target move
+    pub fn is_multi_target(&self) -> bool {
+        return [OPPONENT_ALL, ALL_EXCEPT_SELF, ALL_AND_SELF, ALLY_ALL].contains(self)
+    }
+
+    pub fn is_multi_target_opp(&self) -> bool {
+        return [OPPONENT_ALL, ALL_EXCEPT_SELF, ALL_AND_SELF].contains(self)
     }
 }
 
@@ -74,7 +83,7 @@ pub enum MoveEffect {
     Status(PokemonStatus, BattleTarget, PkmnRational),
     General(BattleEffect, BattleTarget, PkmnRational),
     /// Add flag to target
-    Add_Flag(PokemonBattleState, BattleTarget, PkmnRational),
+    AddFlag(PokemonBattleState, BattleTarget, PkmnRational),
     /// Charge move, Source, Target
     Charge(BattlePosition)
 }
@@ -236,7 +245,7 @@ impl<'simulation> PokemonMove {
     pub fn add_battle_flag(mut self, battle_flag:PokemonBattleState,
         target_pos:BattleTarget, rat:PkmnRational) -> Self
     {
-        self.hit_actions.push(MoveEffect::Add_Flag(
+        self.hit_actions.push(MoveEffect::AddFlag(
             battle_flag, target_pos, rat
         ));
         self
@@ -287,7 +296,7 @@ impl<'simulation> PokemonMove {
 
     fn get_flinch_chance( &self, target_type:BattleTarget, chance:f64) -> BattlePreEffect {
         return BattlePreEffect {
-            effect_type: Flinch,
+            effect_type: BattleEffect::Flinch,
             target_type: target_type,
             accuracy: chance,
             damage_source: "Flinched".to_string()

@@ -1,7 +1,6 @@
 use crate::battle::battle_processor::{BattleContainer, BattleProcessor};
 use crate::battle::{data::{ActivePokemon, TrainedPokemon}, BattlePosition, BattleState};
 use crate::math::PkmnRational;
-use crate::pokemon::types::{PokemonType, get_type_multipler};
 
 mod battle;
 mod pokemon;
@@ -28,8 +27,6 @@ fn make_pokemon_from_file() {
     let poke_vec = pokemon::POKEMON_HASH.get(&PokemonName::Garchomp).unwrap();
     println!("Pokemon from json: {poke_vec:#?}");
 }
-
-
 
 fn battle_container_test() {
 
