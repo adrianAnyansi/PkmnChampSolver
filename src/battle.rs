@@ -17,7 +17,7 @@ mod battle_mechanics;
 
 use crate::battle;
 use crate::battle::DamageAfterEffect::Drain;
-use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus};
+use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, VolatileEnums};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
 use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
@@ -118,7 +118,8 @@ pub enum BattlePctAction {
     AddFlag(PokemonBattleState, bool),
 
     /// Add Field status
-    AddField(BattleFieldEffect, bool)
+    // AddField(BattleFieldEffect, bool)
+    AddField(PokemonFieldState, bool)
 }
 
 
@@ -1001,9 +1002,16 @@ impl<'battle> BattleState<'battle> {
                     => {
                         BattleState::convert_effect_target_to_position(
                             *battle_target, move_action.source, Some(**target_pos))
-                    }
+                    },
+                    // MoveEffect::AddFieldFlag(_ , _rat )
+                    // => {
+                    //     move_action.source
+                    // },
                     MoveEffect::Charge(_) => {
                         panic!("Not yet implemented")
+                    },
+                    _ => {
+                        move_action.source
                     }
                 };
 
@@ -1013,6 +1021,12 @@ impl<'battle> BattleState<'battle> {
                         BattleAction::Protect(active_move.name, 
                                 move_action.source, move_acc)
                     },
+                    // Wide Guard sets a field-wide flag rather than a per-pokemon one
+                    // MoveEffect::General(BattleEffect::WideGuard, _target, rat) => {
+                    //     BattleAction::PctAction(
+                    //         BattlePctAction::AddField(PokemonFieldState::WIDE_GUARD, true),
+                    //         move_action.source, *rat)
+                    // },
                     _ => BattleState::convert_effect_to_baction(
                             hit_action,
                             effect_target_pos)
@@ -1500,6 +1514,17 @@ impl<'battle> BattleState<'battle> {
                 // return BattleState::sim_vol_status(self, vol_status, position, accuracy);
                     
             },
+            BattleAction::PctAction(
+                BattlePctAction::AddField(field_state, _set_value),
+                _position, accuracy) => {
+
+                let apply_func = |cloned_state:&mut BattleState| {
+                    cloned_state.effects.set_flag(field_state);
+                    cloned_state.action_strs.push("Wide Guard protects the team!".to_string());
+                };
+
+                return self.spawn_bc_for_single_prob(apply_func, accuracy);
+            },
             BattleAction::PctActions(
                 BattlePctAction::Stat(stat_set), targets, rat) => {
 
@@ -1560,6 +1585,8 @@ impl<'battle> BattleState<'battle> {
             .clear_flag(PokemonBattleState::PROTECT);
         }
 
+        self.effects.clear_mask(VolatileEnums::FIELD_STATES);
+
         // Mark turn is complete
         self.turn_complete = true;
         self
@@ -1608,6 +1635,10 @@ impl<'battle> BattleState<'battle> {
             },
             MoveEffect::AddFlag(battle_flag, _target, rat ) => {
                 BattleAction::PctAction(BattlePctAction::AddFlag(*battle_flag, true), 
+                        effect_target_pos, *rat)
+            },
+            MoveEffect::AddFieldFlag(field_flag, rat ) => {
+                BattleAction::PctAction(BattlePctAction::AddField(*field_flag, true), 
                         effect_target_pos, *rat)
             },
             _ => panic!("Not like this")

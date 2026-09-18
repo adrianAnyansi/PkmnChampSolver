@@ -31,6 +31,7 @@ impl BitFlagValue128 for PokemonBattleState {
 }
 
 
+
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq )]
 pub enum PokemonStatus {
@@ -74,10 +75,44 @@ impl PokemonStatus {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 /// Contains volatile/permanent states affecting the field
-enum PokemonFieldState {
+pub enum PokemonFieldState {
     WIDE_GUARD,
 }
+
+impl BitFlagValue128 for PokemonFieldState {
+    fn as_u128(self) -> u128 {
+        self as u128
+    }
+}
+
+#[derive(Clone, Copy)]
+/// Contains field status effects
+pub enum BattleFieldEffect {
+    FieldEffect(PokemonFieldState)
+}
+
+// Volatile statuses
+
+pub struct VolatileEnums {}
+
+impl VolatileEnums {
+    const BATTLE_STATES: &[PokemonBattleState] = &[
+        PokemonBattleState::PROTECT, 
+        PokemonBattleState::CONFUSED, 
+    ];
+
+    const FIELD_STATE_FLAGS: &[PokemonFieldState] = &[
+        PokemonFieldState::WIDE_GUARD
+    ];
+
+    pub const FIELD_STATES: PokemonBitFlag128<PokemonFieldState> =
+        PokemonBitFlag128::from_shift_amounts(&[
+            PokemonFieldState::WIDE_GUARD as u128,
+        ]);
+}
+
 
 /// Represents a Pokemon with its species and trainer-selected configuration.
 #[derive(Clone)]

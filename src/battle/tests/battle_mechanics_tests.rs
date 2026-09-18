@@ -298,3 +298,50 @@ fn test_rage_powder_redirects_ally_targeted_move() {
     assert_eq!(hit_bs.get_active(BattlePosition::B1).unwrap().status, PokemonStatus::NONE,
         "Sleep Powder's original ally target should be unaffected");
 }
+
+#[test]
+/// Wide Guard should mark the field, block a multi-target opponent move (Heat Wave)
+/// but let a single-target move (Dragon Claw) through to deal damage
+fn test_wide_guard_blocks_multi_target_move_but_not_single_target() {
+    let mut root_bc = dummy_bc(); // Tyranitar (F1) vs Venusaur (B1)
+
+    let wide_guard = get_move(PokemonMoveName::Wide_Guard);
+    BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::F1, &wide_guard, vec![BattlePosition::F1, BattlePosition::F2]);
+
+    root_bc.sim_next_action(); // resolve move, queue the WIDE_GUARD field effect
+    root_bc.sim_next_action(); // apply the field effect
+
+    let bs_after_wide_guard = root_bc.battle_state.as_ref()
+        .expect("Wide Guard should not branch into multiple states");
+    assert!(bs_after_wide_guard.effects.has_flag(PokemonFieldState::WIDE_GUARD),
+        "Field effects should have the WIDE_GUARD flag set");
+
+    // Opponent uses Heat Wave, a multi-target move, which should be blocked
+    let heat_wave = get_move(Heat_Wave);
+    let starting_hp = bs_after_wide_guard.get_active(BattlePosition::F1).unwrap().current_hp;
+    BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::B1, &heat_wave, vec![BattlePosition::F1]);
+
+    root_bc.sim_next_action();
+
+    assert!(root_bc.message.contains("blocked by Wide Guard"),
+        "Heat Wave should be reported as blocked by Wide Guard");
+    let bs_after_heat_wave = root_bc.battle_state.as_ref().unwrap();
+    assert_eq!(bs_after_heat_wave.get_active(BattlePosition::F1).unwrap().current_hp, starting_hp,
+        "Heat Wave should deal no damage while blocked by Wide Guard");
+    assert!(bs_after_heat_wave.action_queue.is_empty(),
+        "Blocked Heat Wave should not queue any further actions like Damage");
+
+    // Opponent uses Dragon Claw, a single-target move, which should not be blocked
+    let dragon_claw = get_move(PokemonMoveName::Dragon_Claw);
+    BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
+        BattlePosition::B1, &dragon_claw, vec![BattlePosition::F1]);
+
+    root_bc.sim_next_action();
+
+    let bs_after_dragon_claw = root_bc.battle_state.as_ref().unwrap();
+    assert!(bs_after_dragon_claw.action_queue.iter().any(|action|
+        matches!(action, BattleAction::Damage(dmg_effect) if dmg_effect.target == BattlePosition::F1)),
+        "Dragon Claw should queue a Damage effect since Wide Guard doesn't block single-target moves");
+}

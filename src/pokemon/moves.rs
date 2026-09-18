@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ BattleEffect, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
+use crate::{battle::{ BattleEffect, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}, PokemonFieldState}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -44,7 +44,7 @@ use BattleTarget::*;
 impl BattleTarget {
     /// Is this move a single target move
     pub fn is_single_target(&self) -> bool {
-        return [OPPONENT, ALLY, ALLY_ANY].contains(self)
+        return [OPPONENT, ALLY, ALLY_ANY, ANY_EXCEPT_SELF].contains(self)
     }
 
     /// Is this move a multi-target move
@@ -84,6 +84,8 @@ pub enum MoveEffect {
     General(BattleEffect, BattleTarget, PkmnRational),
     /// Add flag to target
     AddFlag(PokemonBattleState, BattleTarget, PkmnRational),
+    /// Add field flag to field
+    AddFieldFlag(PokemonFieldState, PkmnRational),
     /// Charge move, Source, Target
     Charge(BattlePosition)
 }
@@ -247,6 +249,15 @@ impl<'simulation> PokemonMove {
     {
         self.hit_actions.push(MoveEffect::AddFlag(
             battle_flag, target_pos, rat
+        ));
+        self
+    }
+
+    pub fn add_field_flag(mut self, field_flag:PokemonFieldState,
+        rat:PkmnRational) -> Self
+    {
+        self.hit_actions.push(MoveEffect::AddFieldFlag(
+            field_flag, rat
         ));
         self
     }
@@ -445,6 +456,19 @@ impl<T> PokemonBitFlag128<T>
 where
     T: BitFlagValue128,
 {
+    pub const fn from_shift_amounts(shifts: &[u128]) -> Self {
+        let mut flag = 0u128;
+        let mut index = 0;
+        while index < shifts.len() {
+            flag |= 1u128 << shifts[index];
+            index += 1;
+        }
+        Self {
+            flag,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
     pub fn new(init_flags: Vec<T>) -> Self {
         let mut pkmn_flag = PokemonBitFlag128::<T> {
             flag: 0,
@@ -488,6 +512,13 @@ where
         self.flag = 0;
         self
     }
+
+    pub fn clear_mask(&mut self, mask:PokemonBitFlag128<T>) -> &mut Self {
+        let inv_mask = !mask.flag;
+        self.flag &= inv_mask;
+        self
+    }
+
 }
 
 
@@ -512,6 +543,35 @@ mod tests {
         bit_flag.set_flags(vec![PokemonMoveFlag::POWDER]);
 
         assert!(bit_flag.has_flag(PokemonMoveFlag::POWDER));
+    }
+
+    #[test]
+    fn from_shift_amounts_sets_each_flag_bit() {
+        const FLAGS: PokemonBitFlag128<PokemonMoveFlag> =
+            PokemonBitFlag128::from_shift_amounts(&[
+                PokemonMoveFlag::POWDER as u128,
+                PokemonMoveFlag::SOUND as u128,
+            ]);
+
+        assert!(FLAGS.has_flag(PokemonMoveFlag::POWDER));
+        assert!(FLAGS.has_flag(PokemonMoveFlag::SOUND));
+        assert!(!FLAGS.has_flag(PokemonMoveFlag::WIND));
+    }
+
+    #[test]
+    fn clear_mask_clears_selected_bits() {
+        let mut flags = PokemonBitFlag128::<PokemonMoveFlag>::from_shift_amounts(&[
+            PokemonMoveFlag::POWDER as u128,
+            PokemonMoveFlag::SOUND as u128,
+        ]);
+        let mask = PokemonBitFlag128::<PokemonMoveFlag>::from_shift_amounts(&[
+            PokemonMoveFlag::POWDER as u128,
+        ]);
+
+        flags.clear_mask(mask);
+
+        assert!(!flags.has_flag(PokemonMoveFlag::POWDER));
+        assert!(flags.has_flag(PokemonMoveFlag::SOUND));
     }
 }
 
@@ -700,11 +760,13 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         High_Horsepower => PokemonMove::new(
             pkmn_move_name, GROUND, Physical
         ).set_power(95),
+
         Wide_Guard => PokemonMove::status(
             pkmn_move_name, ROCK, ALLY_ALL)
-        .add_dummy_flag("spread_protect")
-        .add_dummy_flag("protect_stall")
-        .add_dummy_flag("priority +3"),
+        .add_field_flag(PokemonFieldState::WIDE_GUARD, PkmnRational::ONE())
+        .add_flag(PRIORITY_3)
+        .add_dummy_flag("priority+3")
+        .add_flag(INCRM_PROTECT_COUNTER),
         
         Will_O_Wisp => PokemonMove::status(
             pkmn_move_name, FIRE, OPPONENT
