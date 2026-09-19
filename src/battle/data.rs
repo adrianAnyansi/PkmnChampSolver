@@ -3,8 +3,9 @@
 
 use strum_macros::{Display, EnumString};
 
+use crate::pokemon::abilities::PokemonAbilityName;
 use crate::pokemon::types::{PokemonType, get_type_multipler};
-use crate::pokemon::{self, Pokemon, PokemonAbilityName, PokemonName};
+use crate::pokemon::{self, Pokemon, PokemonName};
 use crate::pokemon::moves::{BitFlagValue128, PokemonBitFlag128, PokemonMoveName};
 
 /// Contains volatile/permanent states affecting pokemon in battle

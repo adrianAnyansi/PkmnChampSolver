@@ -4,6 +4,9 @@
 pub mod poke_stat;
 pub mod moves;
 pub mod types;
+pub mod abilities;
+
+pub use self::abilities::PokemonAbilityName;
 
 pub struct I32Range {
     low: i32,
@@ -29,39 +32,6 @@ pub enum PokemonName {
     Steelix,
     Sneasler,
     Rotom_Wash
-}
-
-
-#[allow(non_camel_case_types)]
-#[derive(Deserialize, EnumString, Debug, Copy, Clone, Eq, PartialEq, Display)]
-pub enum PokemonAbilityName {
-    Sand_Force,
-    Rough_Skin,
-    Defiant,
-    Sand_Stream,
-    Unnerve,
-    Supreme_Overlord,
-    Sand_Veil,
-    Intimidate,
-    Blaze,
-    Rock_Head,
-    Sturdy,
-    Sheer_Force,
-    Solar_Power,
-    Pressure,
-    Unburden,
-    Poison_Touch,
-    Chlorophyll,
-    Overgrow,
-    Thick_Fat,
-    Levitate,
-    Flower_Veil,
-    Symbiosis,
-    Hospitality,
-    Heatproof,
-    Flame_Body,
-    Gale_Wings,
-    Nothing
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, Eq, PartialEq)]

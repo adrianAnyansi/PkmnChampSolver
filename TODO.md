@@ -1,41 +1,51 @@
 # TODO (Overview)
-So there are 3 targets I can do
-1. Do end checks/turn and complete testing (needs choice)
-2. Finish all mechanic implementations, then finish choice/end/begin checks
 
-Im starting to grasp how far the project is from completion, and like its understandable, I knew the battle engine would be complicated but feels like every important mechanic has an edge case that sucks to code up, and I still havent done a full simulation test because the ridiculous amount of choice mechanics and messaging I have to do...
-ugh, its super demotivating-
-
-I think the best way to hammer out each move, each mechanic and leave choice mechanics for the end. Im just not gonna get any satisifaction from doing the simulation early, I'd love to simulate both teams with a full log & know the time required.
-
-So, back to the mechanics, and wide guard.
 
 ## Today
 --- 
-Switch is done*, what next?
-Fainting? Moves? To keep me focused I wanted to only do mechanics in these teams. This now unlocks some things I was avoiding.
-
-TrainedPokemon can lose their item, ability, type- I need even more classes great- best to treat them completely separately
+Thinking a bit about abilities
+Lets start typing that up
 
 ## Moves to implement
-Wide Guard - Special Protect
+Parting Shot - Return after stats
+Trick Room - Speed order stuff
 Light Screen - room effect + damage calc
+Heavy Slam - Weight for base power
 Knock Off - Item mechanic
+
+## Abilities to implement
+Chlorophyll - Speed mechanic with instant change
+Blaze
+Rough Skin
+Intimidate
+Flower Veil
+Hospitality
+Unburden - Item mechanic
+Gale Wings - Speed mechanic
+Sturdy
+Levitate
+Sand Stream
+Drought
+Fairy Aura
+Sand Force
 
 ## Current Thoughts
 ---
 
+Thinking about some bigger concepts
+There needs to be an effective stat method, that also accounts for battle status (boosts from abilities, items, more)
+
+TrainedPokemon can lose their item, ability, type- I need even more classes great- best to treat them completely separately
+
 Need to put the overall control of trainer choice into a note and thoughts 
 
-Finished switch, then returning to move implementation
-Then I'll do abilities
-
-I gotta focus up and decide what to do-
+Just focusing on things to do 1 by 1
 - Moves (dependant on other things)
 - Abilties 
 - Items
 - Switch Action & Fainting
 - Beginning / End of battle
+- Speed mechanics
 
 
 ## Messaging thoughts
