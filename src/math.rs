@@ -157,6 +157,20 @@ impl PartialEq for PkmnRational {
     }
 }
 
+impl PkmnRational {
+    /// Scale both fractions to a common denominator, returning their resulting numerators
+    fn common_denom_numers(&self, other: &Self) -> (i32, i32) {
+        (self.numer * other.demon as i32, other.numer * self.demon as i32)
+    }
+}
+
+impl PartialOrd for PkmnRational {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let (a, b) = self.common_denom_numers(other);
+        a.partial_cmp(&b)
+    }
+}
+
 impl std::ops::Sub for PkmnRational {
     type Output = Self;
 
@@ -393,6 +407,24 @@ mod tests {
         // different denominator, equivalent value (1/2 == 2/4)
         assert!(PkmnRational { numer: 1, demon: 2 } == PkmnRational { numer: 2, demon: 4 });
         assert!(PkmnRational { numer: 1, demon: 3 } != PkmnRational { numer: 1, demon: 2 });
+    }
+
+    #[test]
+    fn test_rational_ordering() {
+        // same denominator
+        assert!(PkmnRational::new(3, 10) < PkmnRational::new(5, 10));
+        assert!(PkmnRational::new(3, 10) <= PkmnRational::new(5, 10));
+        assert!(PkmnRational::new(3, 10) <= PkmnRational::new(3, 10));
+        assert!(!(PkmnRational::new(5, 10) < PkmnRational::new(3, 10)));
+
+        // different denominators (1/3 < 3/4)
+        assert!(PkmnRational::new(1, 3) < PkmnRational::new(3, 4));
+        assert!(PkmnRational::new(3, 4) > PkmnRational::new(1, 3));
+
+        // equivalent values are not strictly less/greater, but are <=/>=
+        assert!(PkmnRational::new(1, 2) <= PkmnRational::new(2, 4));
+        assert!(PkmnRational::new(1, 2) >= PkmnRational::new(2, 4));
+        assert!(!(PkmnRational::new(1, 2) < PkmnRational::new(2, 4)));
     }
 
     #[test]
