@@ -3,6 +3,7 @@
 
 use strum_macros::{Display, EnumString};
 
+use crate::math::PkmnRational;
 use crate::pokemon::abilities::PokemonAbilityName;
 use crate::pokemon::types::{PokemonType, get_type_multipler};
 use crate::pokemon::{self, Pokemon, PokemonName};
@@ -267,6 +268,17 @@ impl<'battle> ActivePokemon<'battle> {
                 &self.stat_modifier[stat_idx]
             }
         }
+    }
+
+    /// Return active types from the field
+    pub fn get_active_types(&self) -> &[PokemonType] {
+        // TODO: Account for abilities and move effects
+        return &self.trained_pokemon.pokemon.types
+    }
+
+    pub fn get_health_pct(&self) -> PkmnRational {
+        return PkmnRational::new(self.current_hp,
+            self.get_active_stat(PokemonStatName::HEALTH) as u32)
     }
 
 }

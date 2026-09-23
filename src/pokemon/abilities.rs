@@ -1,10 +1,9 @@
-
 use std::collections::HashMap;
 
 use strum_macros::{Display, AsRefStr, EnumString};
 use serde::Deserialize;
 
-use crate::{battle::BattleAction, math::PkmnRational, pokemon::{moves::{BattleTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}}};
+use crate::{battle::{BattleState, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{moves::{BattleTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
 
 #[allow(non_camel_case_types)]
 #[derive(Deserialize, EnumString, Display,
@@ -54,11 +53,31 @@ impl BitFlagValue128 for AbilityTriggerFlag {
     }
 }
 
-struct PokemonAbility {
+// pub type MoveDamageModifier = for<'battle> fn(
+//     &BattleState<'battle>,
+//     &ActivePokemon<'battle>,
+//     &ActivePokemon<'battle>,
+//     &PokemonMove,
+// ) -> PkmnRational;
+
+pub type MoveDamageModifier = 
+// Box< dyn for<'battle> Fn(
+     for<'battle> fn(
+        &BattleState<'battle>,
+        &ActivePokemon<'battle>,
+        &ActivePokemon<'battle>,
+        &PokemonMove,
+    ) -> PkmnRational
+// >
+;
+
+// #[derive(Clone)]
+pub struct PokemonAbility {
     pub name:PokemonAbilityName,
     /// Actions triggered on entering the field
     pub on_enter: Vec<MoveEffect>,
-    pub type_flags: PokemonBitFlag128<AbilityTriggerFlag>
+    pub type_flags: PokemonBitFlag128<AbilityTriggerFlag>,
+    pub move_damage_modifier: Option<MoveDamageModifier>,
 }
 
 impl<'simulation> PokemonAbility {
@@ -66,7 +85,8 @@ impl<'simulation> PokemonAbility {
         PokemonAbility { 
             name, 
             on_enter: vec![],
-            type_flags: PokemonBitFlag128::<AbilityTriggerFlag>::empty()
+            type_flags: PokemonBitFlag128::<AbilityTriggerFlag>::empty(),
+            move_damage_modifier: None,
         }
     }
 
@@ -80,25 +100,62 @@ impl<'simulation> PokemonAbility {
         self
     }
 
+// pub fn add_flag(mut self, flag:AbilityTriggerFlag)
+
+    // I cant add a function and 
+    pub fn add_damage_calc(mut self) -> Self {
+        self
+    }
+
+    fn active_starter_ability_logic(boost_type:PokemonType, 
+        curr_types:&[PokemonType], health_pct:PkmnRational,
+        pkmn_move:&PokemonMove) -> bool {
+        return pkmn_move.r#type == boost_type &&
+            (health_pct <= PkmnRational::new(1, 3) && 
+            curr_types.contains(&boost_type))
+    }
+
+    fn add_damage_modifier(mut self, modf_closure:MoveDamageModifier) -> Self{
+        self.move_damage_modifier = Some(modf_closure);
+        self.type_flags.set_flag(AbilityTriggerFlag::OnMoveDamage);
+        self
+    }
 }
 
-struct PokemonAbilityLibrary {
-    pub ability_map:HashMap<PokemonAbilityName, PokemonAbility>
-}
-
-impl<'simulation> PokemonAbilityLibrary {
-    pub fn get_ability(&mut self, ably_name:PokemonAbilityName) -> &PokemonAbility {
-
-        let mut ability = PokemonAbility::new(ably_name);
-        ability = match ably_name {
-
-            PokemonAbilityName::Blaze => ability.add_enter_effect(BattleTarget::SELF, 
-            vec![(PokemonStatName::ATTACK, PokemonStatModifier::PLUS_1)]),
-            _ => panic!("Cant do")
-        };
-
-        self.ability_map.insert(ably_name, ability);
-
-        &self.ability_map[&ably_name]
+fn make_ability(ably_name: PokemonAbilityName) -> PokemonAbility {
+    match ably_name {
+        PokemonAbilityName::Blaze => PokemonAbility {
+            move_damage_modifier: Some(
+                |_battle_state, source, _target, pkmn_move| {
+                    if PokemonAbility::active_starter_ability_logic(FIRE, 
+                        source.get_active_types(),
+                    source.get_health_pct(),
+                    pkmn_move) {
+                    PkmnRational::new(3, 2)
+                } else {
+                    PkmnRational::ONE()
+                }
+            }),
+            ..PokemonAbility::new(ably_name)
+        },
+        PokemonAbilityName::Overgrow => {
+            PokemonAbility::new(ably_name).add_damage_modifier(
+                |_battle_state, source, _target, pkmn_move| {
+                    if PokemonAbility::active_starter_ability_logic(GRASS, 
+                        source.get_active_types(), 
+                        source.get_health_pct(),
+                        pkmn_move) {
+                        PkmnRational::new(3, 2)
+                    } else {
+                        PkmnRational::ONE()
+                    }
+                }
+            )
+        },
+        PokemonAbilityName::Chlorophyll => {
+            PokemonAbility::new(ably_name)
+            
+        }
+        _ => PokemonAbility::new(ably_name),
     }
 }

@@ -4,7 +4,7 @@
 ## Today
 --- 
 Thinking a bit about abilities
-Lets start typing that up
+Lets start typing that upQW
 
 ## Moves to implement
 Parting Shot - Return after stats
