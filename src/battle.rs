@@ -1208,6 +1208,8 @@ impl<'battle> BattleState<'battle> {
             // Burn check, or Guts
             // Other (In speed order), see https://bulbapedia.bulbagarden.net/wiki/Damage
 
+            // TODO: Add blaze/overgrow/etc
+
             let mut calc_dmg = base_damage;
             while let Some(modifier) = dmg_modifier_list.pop_front() {
                 calc_dmg = mult_and_round(calc_dmg, modifier);
@@ -1532,15 +1534,6 @@ impl<'battle> BattleState<'battle> {
                     // TODO: Multi target stat change is not implemented
                     return self.sim_stat(&stat_set, targets[0].unwrap(), rat);
 
-                    // let valid_targets: Vec<BattlePosition> = targets.into_iter().flatten().collect();
-                    // let prob_set = gen_power_set(vec![rat; valid_targets.len()]);
-                    // let apply_func = 
-                    // |cloned_state:&mut BattleState, target_idx:u8| {
-                    //     let position = valid_targets[target_idx as usize];
-                    //     cloned_state.exec_stat_change(position, &stat_action);
-                    //     String::from("Stringy")
-                    // };
-
                     // return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
                 },
             // BattleAction::VolatileStatus(position, vol_status, accuracy) => {
@@ -1553,13 +1546,9 @@ impl<'battle> BattleState<'battle> {
                         Some("Not impl".to_string()))]
             }
         }
-        
-        
-        // return vec![];
 
         // Ok can nested states occur? yes
         // For each state, the internal state will create a clone and modify that state to return
-
         
     }
 

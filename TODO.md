@@ -46,7 +46,7 @@ Just focusing on things to do 1 by 1
 - Switch Action & Fainting
 - Beginning / End of battle
 - Speed mechanics
-
+- Formes/Mega evolution
 
 ## Messaging thoughts
 

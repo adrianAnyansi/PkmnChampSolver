@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use strum_macros::{Display, AsRefStr, EnumString};
 use serde::Deserialize;
 
-use crate::{battle::{BattleState, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{moves::{BattleTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
+use crate::{battle::{BattleState, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{abilities::AbilityTriggerFlag::{CausesSpeedChange, OnWeatherChange}, moves::{BattleTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
 
 #[allow(non_camel_case_types)]
 #[derive(Deserialize, EnumString, Display,
@@ -44,7 +44,9 @@ pub enum AbilityTriggerFlag {
     OnEnter,
     OnExit,
     OnMoveDamage,
-    OnFaint
+    OnFaint,
+    OnWeatherChange,
+    CausesSpeedChange,
 }
 
 impl BitFlagValue128 for AbilityTriggerFlag {
@@ -67,9 +69,15 @@ pub type MoveDamageModifier =
         &ActivePokemon<'battle>,
         &ActivePokemon<'battle>,
         &PokemonMove,
-    ) -> PkmnRational
+    ) -> Option<PkmnRational>
 // >
 ;
+
+pub type SpeedModifier = 
+    for<'battle> fn(
+        &BattleState<'battle>,
+        &ActivePokemon<'battle>
+    ) -> Option<PkmnRational>;
 
 // #[derive(Clone)]
 pub struct PokemonAbility {
@@ -78,6 +86,7 @@ pub struct PokemonAbility {
     pub on_enter: Vec<MoveEffect>,
     pub type_flags: PokemonBitFlag128<AbilityTriggerFlag>,
     pub move_damage_modifier: Option<MoveDamageModifier>,
+    pub speed_modif_func: Option<SpeedModifier>,
 }
 
 impl<'simulation> PokemonAbility {
@@ -87,7 +96,13 @@ impl<'simulation> PokemonAbility {
             on_enter: vec![],
             type_flags: PokemonBitFlag128::<AbilityTriggerFlag>::empty(),
             move_damage_modifier: None,
+            speed_modif_func: None
         }
+    }
+
+    pub fn add_flag(mut self, flag:AbilityTriggerFlag) -> Self {
+        self.type_flags.set_flag(flag);
+        self
     }
 
     pub fn add_enter_effect(mut self,
@@ -100,7 +115,7 @@ impl<'simulation> PokemonAbility {
         self
     }
 
-// pub fn add_flag(mut self, flag:AbilityTriggerFlag)
+    // pub fn add_flag(mut self, flag:AbilityTriggerFlag)
 
     // I cant add a function and 
     pub fn add_damage_calc(mut self) -> Self {
@@ -120,6 +135,12 @@ impl<'simulation> PokemonAbility {
         self.type_flags.set_flag(AbilityTriggerFlag::OnMoveDamage);
         self
     }
+
+    fn add_speed_modifier(mut self, modf:SpeedModifier) -> Self {
+        self.speed_modif_func = Some(modf);
+        self.type_flags.set_flag(CausesSpeedChange);
+        self
+    }
 }
 
 fn make_ability(ably_name: PokemonAbilityName) -> PokemonAbility {
@@ -131,10 +152,10 @@ fn make_ability(ably_name: PokemonAbilityName) -> PokemonAbility {
                         source.get_active_types(),
                     source.get_health_pct(),
                     pkmn_move) {
-                    PkmnRational::new(3, 2)
-                } else {
-                    PkmnRational::ONE()
-                }
+                        Some(PkmnRational::new(3, 2))
+                    } else {
+                        None
+                    }
             }),
             ..PokemonAbility::new(ably_name)
         },
@@ -144,17 +165,23 @@ fn make_ability(ably_name: PokemonAbilityName) -> PokemonAbility {
                     if PokemonAbility::active_starter_ability_logic(GRASS, 
                         source.get_active_types(), 
                         source.get_health_pct(),
-                        pkmn_move) {
-                        PkmnRational::new(3, 2)
-                    } else {
-                        PkmnRational::ONE()
+                    pkmn_move) {
+                        return Some(PkmnRational::new(3, 2))
                     }
+                    None
                 }
             )
         },
         PokemonAbilityName::Chlorophyll => {
             PokemonAbility::new(ably_name)
-            
+            .add_speed_modifier(
+                |battle_state:&BattleState, source:&ActivePokemon| {
+                    if battle_state.weather == BattleWeatherState::SUN {
+                        return Some(PkmnRational::new(2, 1))
+                    }
+                    None
+                }
+            ).add_flag(OnWeatherChange)
         }
         _ => PokemonAbility::new(ably_name),
     }
