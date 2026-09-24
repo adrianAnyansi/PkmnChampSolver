@@ -312,11 +312,11 @@ pub enum MoveResultEnum {
 /// Represents the state of the battle between any action/resolve.
 /// This can include intermediate states
 #[derive(Clone)]
-pub struct BattleState<'battle> {
+pub struct BattleState<'battle, 'simulation: 'battle> {
     /// Front facing team
-    pub f_team: ActiveTeam<'battle>,
+    pub f_team: ActiveTeam<'battle, 'simulation>,
     /// Back facing team
-    pub b_team: ActiveTeam<'battle>,
+    pub b_team: ActiveTeam<'battle, 'simulation>,
 
     /// front face pokemon, left
     f_poke1: Option<usize>,
@@ -351,7 +351,7 @@ pub struct BattleState<'battle> {
     pub turn_complete: bool
 }
 
-impl<'battle> BattleState<'battle> {
+impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     pub fn new () -> Self {
         BattleState {
@@ -378,8 +378,8 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
-    pub fn simple (f_poke:ActivePokemon<'battle>, 
-        b_poke:ActivePokemon<'battle>) -> Self {
+    pub fn simple (f_poke:ActivePokemon<'battle, 'simulation>, 
+        b_poke:ActivePokemon<'battle, 'simulation>) -> Self {
             let mut bs = BattleState::new();
             let f_idx = bs.f_team.add_poke(f_poke);
             let b_idx = bs.b_team.add_poke(b_poke);
@@ -437,7 +437,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Get pokemon name
-    fn get_default_poke_name (poke:Option<&ActivePokemon<'battle>>) -> String {
+    fn get_default_poke_name (poke:Option<&ActivePokemon<'battle, 'simulation>>) -> String {
         return poke.as_ref().map(
             |p| 
             p.trained_pokemon.pokemon.name.to_string()).unwrap_or_else(|| "_".to_string()
@@ -493,7 +493,7 @@ impl<'battle> BattleState<'battle> {
     }
 
 
-    fn get_active_mut<'a>(&'a mut self, position: BattlePosition) -> Option<&'a mut ActivePokemon<'battle>> {
+    fn get_active_mut<'a>(&'a mut self, position: BattlePosition) -> Option<&'a mut ActivePokemon<'battle, 'simulation>> {
         match position {
             BattlePosition::F1 => self.f_team.get_mut(self.f_poke1.unwrap_or(100) as usize),
             BattlePosition::F2 => self.f_team.get_mut(self.f_poke2.unwrap_or(100) as usize),
@@ -502,7 +502,7 @@ impl<'battle> BattleState<'battle> {
         }
     }
 
-    pub fn get_active<'a>(&'a self, position: BattlePosition) -> Option<&'a ActivePokemon<'battle>> {
+    pub fn get_active<'a>(&'a self, position: BattlePosition) -> Option<&'a ActivePokemon<'battle, 'simulation>> {
         match position {
             BattlePosition::F1 => self.f_team.get(self.f_poke1.unwrap_or(100) as usize),
             BattlePosition::F2 => self.f_team.get(self.f_poke2.unwrap_or(100) as usize),
@@ -608,7 +608,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Simulate multiple* stat changes for a pokemon in order
-    fn sim_stat(&self, stat_set:&StatSet, target_pos:BattlePosition, rat:PkmnRational) -> Vec<BattleContainer<'battle>> {
+    fn sim_stat(&self, stat_set:&StatSet, target_pos:BattlePosition, rat:PkmnRational) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         // Calculate and validate final stat changes
         let valid_modfs:Vec<StatModf> = // for Some(stat_modf) in stat_set.arr {
@@ -715,7 +715,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Simulate a pokemon protecting
-    fn sim_protect(&self, move_name:PokemonMoveName, target_pos:BattlePosition, acc:PkmnRational) -> Vec<BattleContainer<'battle>> {
+    fn sim_protect(&self, move_name:PokemonMoveName, target_pos:BattlePosition, acc:PkmnRational) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         let mut result_vec:Vec<BattleContainer> = Vec::new();
 
@@ -832,7 +832,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Simulate performing a status to the change
-    fn sim_status(&self, status_action: StatusAction) -> Vec<BattleContainer<'battle>> {
+    fn sim_status(&self, status_action: StatusAction) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         // TODO: Validate status is not blocked by field/battle
         // let valid_targets = self.can_perform_status(&status_action);
@@ -872,7 +872,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     // Simulate a move hit and create states from this
-    fn sim_move(&mut self, move_action: &mut MoveAction) -> Vec<BattleContainer<'battle>> {
+    fn sim_move(&mut self, move_action: &mut MoveAction) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         let source_mut = self.get_active_mut(move_action.source);
         source_mut.unwrap().actions_taken += 1;
@@ -1050,7 +1050,7 @@ impl<'battle> BattleState<'battle> {
             vec![move_acc; num_valid_targets]);
 
         let add_to_queue = 
-        |state:&mut BattleState<'battle>, battle_actions:&Vec<BattleAction<'battle>>| {
+        |state:&mut BattleState<'battle, 'simulation>, battle_actions:&Vec<BattleAction<'battle>>| {
             for ba in battle_actions.iter().rev() {
                 // NOTE this is cloned because multiple borrow occurs
                 state.action_queue.push_front(ba.clone());
@@ -1276,8 +1276,8 @@ impl<'battle> BattleState<'battle> {
     /// Spawn N BattleContainers based on multiple independent* events with apply & fail functions
     fn spawn_bcs_for_power_set<F> (&self, prob_set:&[PkmnRational], 
         mut apply_func:F, mut fail_func:Option<F>
-    ) -> Vec<BattleContainer<'battle>>
-        where F: FnMut(&mut BattleState<'battle>, u8) -> String,
+    ) -> Vec<BattleContainer<'battle, 'simulation>>
+        where F: FnMut(&mut BattleState<'battle, 'simulation>, u8) -> String,
     {
         let mut result_bcs = vec![];
         
@@ -1308,8 +1308,8 @@ impl<'battle> BattleState<'battle> {
 
     /// Create 2 states, with 1 applying a simulation change
     fn spawn_bc_for_single_prob<F> (&self, mut apply_func:F, prob:PkmnRational) 
-        -> Vec<BattleContainer<'battle>>
-        where F: FnMut(&mut BattleState<'battle>) 
+        -> Vec<BattleContainer<'battle, 'simulation>>
+        where F: FnMut(&mut BattleState<'battle, 'simulation>) 
     {
         let mut result_bcs = vec![];
         if prob != PkmnRational::ZERO() {
@@ -1375,7 +1375,7 @@ impl<'battle> BattleState<'battle> {
 
     /// Simulate damage step, creating multiple universes if damage range
     /// causes multiple effects
-    fn sim_damage(&self, dmg_effect:DamageEffect) -> Vec<BattleContainer<'battle>> {
+    fn sim_damage(&self, dmg_effect:DamageEffect) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         // TODO: Check if any abilities block/mitigate the damage, i.e disguise
         // NOTE: Might be bad to check here, lets assume damage is always accurate
@@ -1443,7 +1443,7 @@ impl<'battle> BattleState<'battle> {
         vec![bc]
     }
 
-    fn sim_healing(&mut self, heal_effect:HealEffect) -> Vec<BattleContainer<'battle>> {
+    fn sim_healing(&mut self, heal_effect:HealEffect) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         let target_pkmn = self.get_active_mut(heal_effect.target).unwrap();
         
@@ -1464,7 +1464,7 @@ impl<'battle> BattleState<'battle> {
 
     /// Create a list of battle states created from 1 action on the action queue
     #[allow(unused_mut)] // some actions need to be modified
-    pub fn sim_action(&mut self, mut action:BattleAction) -> Vec<BattleContainer<'battle>> {
+    pub fn sim_action(&mut self, mut action:BattleAction) -> Vec<BattleContainer<'battle, 'simulation>> {
         // TODO: sort action queue
 
         match action {

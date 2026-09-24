@@ -123,7 +123,7 @@ fn test_return_poke_clears_confusion_from_f2() {
         "battle_status should be cleared when the Pokémon returns to the team");
 }
 
-fn dummy_bc<'battle>() -> BattleContainer<'battle> {
+fn dummy_bc() -> BattleContainer<'static, 'static> {
     let ttar_pkmn = ActivePokemon::quick(PokemonName::Tyranitar);
     let ven_pkmn = ActivePokemon::quick(PokemonName::Venusaur);
 

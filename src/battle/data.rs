@@ -4,7 +4,7 @@
 use strum_macros::{Display, EnumString};
 
 use crate::math::PkmnRational;
-use crate::pokemon::abilities::PokemonAbilityName;
+use crate::pokemon::abilities::{PokemonAbility, PokemonAbilityName, make_ability};
 use crate::pokemon::types::{PokemonType, get_type_multipler};
 use crate::pokemon::{self, Pokemon, PokemonName};
 use crate::pokemon::moves::{BitFlagValue128, PokemonBitFlag128, PokemonMoveName};
@@ -118,17 +118,17 @@ impl VolatileEnums {
 
 /// Represents a Pokemon with its species and trainer-selected configuration.
 #[derive(Clone)]
-pub struct TrainedPokemon {
+pub struct TrainedPokemon<'battle, 'simulation: 'battle> {
     pub pokemon: &'static Pokemon,
     /// additional stats, must be 32+32+2 total
     pub trained_stats: PokemonStats,
-    pub ability: PokemonAbilityName,
+    pub ability: &'battle PokemonAbility<'simulation>,
     pub nature: PokemonNature,
 }
 
-impl TrainedPokemon {
+impl<'battle, 'simulation: 'battle> TrainedPokemon<'battle, 'simulation> {
     pub fn new (pokemon:&'static Pokemon,
-        ability:PokemonAbilityName,
+        ability:&'battle PokemonAbility<'simulation>,
         nature:PokemonNature,
         trained_stats: Option<PokemonStats>) -> Self {
         Self {
@@ -161,21 +161,21 @@ impl TrainedPokemon {
 }
 
 /// Represents inactive pokemon in battle but not on the field
-#[derive(Clone)]
-pub struct InActivePokemon<'battle> {
-    pub trained_pokemon: &'battle TrainedPokemon,
-    pub status: PokemonStatus,
-    pub current_hp: u32,
+// #[derive(Clone)]
+// pub struct InActivePokemon<'battle> {
+//     pub trained_pokemon: &'battle TrainedPokemon,
+//     pub status: PokemonStatus,
+//     pub current_hp: u32,
 
-    pub disguise_flag: bool,
-    pub eiscue_flag: bool
-    // etc
-}
+//     pub disguise_flag: bool,
+//     pub eiscue_flag: bool
+//     // etc
+// }
 
 /// Represents an active pokemon slot including current hp, status and boosts
 #[derive(Clone, Copy)]
-pub struct ActivePokemon<'battle> {
-    pub trained_pokemon: &'battle TrainedPokemon,
+pub struct ActivePokemon<'battle, 'simulation: 'battle> {
+    pub trained_pokemon: &'battle TrainedPokemon<'battle, 'simulation>,
 
     pub status: PokemonStatus,
     pub stat_modifier: [PokemonStatModifier; 5], // temp exclude evasion & acc
@@ -197,8 +197,8 @@ pub struct ActivePokemon<'battle> {
     pub confusion_count: u8,
 }
 
-impl<'battle> ActivePokemon<'battle> {
-    pub fn new (trained_pokemon:&'battle TrainedPokemon) -> Self {
+impl<'battle, 'simulation: 'battle> ActivePokemon<'battle, 'simulation> {
+    pub fn new (trained_pokemon:&'battle TrainedPokemon<'battle, 'simulation>) -> Self {
             let max_hp = trained_pokemon.get_stat(PokemonStatName::HEALTH);
             Self {
                 current_hp: max_hp, // copied first
@@ -217,11 +217,14 @@ impl<'battle> ActivePokemon<'battle> {
             }
     }
 
-    pub fn quick(poke_name:PokemonName) -> ActivePokemon<'static> {
+    pub fn quick(poke_name:PokemonName) -> ActivePokemon<'static, 'static> {
         let pokemon = pokemon::get_pkmn(poke_name);
+        let noth_ability: &'static PokemonAbility<'static> = Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
+
+        // TODO: This gets leaked for quick testing, but ensure that its not broken
         let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
             pokemon,
-            PokemonAbilityName::Nothing,
+            noth_ability,
             PokemonNature::Quirky,
             None
         )));
@@ -283,7 +286,7 @@ impl<'battle> ActivePokemon<'battle> {
 
 }
 
-impl core::fmt::Display for ActivePokemon<'_> {
+impl core::fmt::Display for ActivePokemon<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut hp_pct_str:String = String::new();
         let max_hp = self.get_active_stat(PokemonStatName::HEALTH);
@@ -303,8 +306,8 @@ impl core::fmt::Display for ActivePokemon<'_> {
 }
 
 #[derive(Clone, Copy)]
-pub struct ActiveTeam<'battle> {
-    pub pokemon: [Option<ActivePokemon<'battle>>; 6],
+pub struct ActiveTeam<'battle, 'simulation: 'battle> {
+    pub pokemon: [Option<ActivePokemon<'battle, 'simulation>>; 6],
     /// Mega tracking
     pub used_mega: bool,
     pub has_mega: bool
@@ -313,13 +316,13 @@ pub struct ActiveTeam<'battle> {
     // any other team based stuff here
 }
 
-impl<'battle> ActiveTeam<'battle> {
+impl<'battle, 'simulation: 'battle> ActiveTeam<'battle, 'simulation> {
     // TODO: Use Trained Pokemon instead
 
     /// Create new team from pokemon
-    pub fn new_from_pokemon (pokemon_vec:Vec<ActivePokemon<'battle>>) -> ActiveTeam<'battle> {
+    pub fn new_from_pokemon (pokemon_vec:Vec<ActivePokemon<'battle, 'simulation>>) -> ActiveTeam<'battle, 'simulation> {
 
-        let mut pokemon:[Option<ActivePokemon>; 6] = [None; 6];
+        let mut pokemon:[Option<ActivePokemon<'battle, 'simulation>>; 6] = [None; 6];
         for (idx, poke) in pokemon_vec.iter().enumerate() {
             pokemon[idx] = Some(*poke);
         }
@@ -331,11 +334,11 @@ impl<'battle> ActiveTeam<'battle> {
         }
     }
 
-    pub fn empty () -> ActiveTeam<'battle> {
+    pub fn empty () -> ActiveTeam<'battle, 'simulation> {
         ActiveTeam::new_from_pokemon(vec![])
     }
 
-    pub fn add_poke(&mut self, new_poke:ActivePokemon<'battle>) -> usize {
+    pub fn add_poke(&mut self, new_poke:ActivePokemon<'battle, 'simulation>) -> usize {
 
         let mut empty_idx:usize = 0;
         for poke in self.pokemon.iter() {
@@ -351,14 +354,14 @@ impl<'battle> ActiveTeam<'battle> {
         empty_idx
     }
 
-    pub fn get(&self, index:usize) -> Option<&ActivePokemon<'battle>> {
+    pub fn get(&self, index:usize) -> Option<&ActivePokemon<'battle, 'simulation>> {
         if index >= self.pokemon.len() {
             return None
         }
         self.pokemon[index].as_ref()
     }
 
-    pub fn get_mut(&mut self, index:usize) -> Option<&mut ActivePokemon<'battle>> {
+    pub fn get_mut(&mut self, index:usize) -> Option<&mut ActivePokemon<'battle, 'simulation>> {
         if index >= self.pokemon.len() {
             return None
         }

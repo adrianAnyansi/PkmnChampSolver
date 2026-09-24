@@ -7,7 +7,7 @@ mod pokemon;
 mod math;
 
 
-use crate::pokemon::abilities::PokemonAbilityName;
+use crate::pokemon::abilities::{PokemonAbilityLibrary, PokemonAbilityName};
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::PokemonMoveName::{self};
 
@@ -38,15 +38,17 @@ fn battle_container_test() {
     let venusaur = pokemon::get_pkmn(PokemonName::Venusaur);
     let garchomp = pokemon::get_pkmn(PokemonName::Garchomp);
 
+    let AbilityLibrary = PokemonAbilityLibrary::new();
+
     let venusaur_trained = TrainedPokemon::new(venusaur,
-        PokemonAbilityName::Nothing,
+        AbilityLibrary.get_ability(PokemonAbilityName::Chlorophyll),
         pokemon::poke_stat::PokemonNature::Brave, None);
     let venusaur_idx = bs.f_team.add_poke(ActivePokemon::new(&venusaur_trained));
     bs.send_out(BattlePosition::F1, venusaur_idx);
     let kingambit_idx = bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Kingambit));
     bs.send_out(BattlePosition::F2, kingambit_idx);
     let garchomp_trained = TrainedPokemon::new(garchomp,
-        PokemonAbilityName::Nothing,
+        AbilityLibrary.get_ability(PokemonAbilityName::Nothing),
         pokemon::poke_stat::PokemonNature::Brave, None);
     let garchomp_idx = bs.b_team.add_poke(ActivePokemon::new(&garchomp_trained));
     bs.send_out(BattlePosition::B1, garchomp_idx);

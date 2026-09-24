@@ -7,7 +7,7 @@ use crate::pokemon::moves::{get_move, get_weather_modify_move, PokemonMoveName};
 use crate::pokemon::types::PokemonType;
 
 /// Create a quick bc with Garchomp (B1) vs Tyranitar (F1)
-fn dummy_bc<'battle>() -> BattleContainer<'battle> {
+fn dummy_bc() -> BattleContainer<'static, 'static> {
     let garchomp = ActivePokemon::quick(PokemonName::Garchomp);
     let tyranitar = ActivePokemon::quick(PokemonName::Tyranitar);
 
