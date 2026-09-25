@@ -3,8 +3,9 @@
 
 ## Today
 --- 
-Thinking a bit about abilities
-Lets start typing that upQW
+
+Abilties has a bunch of triggers and functions
+I don't know a generic thing to return on these, like Hospitality should spawn a battle action? Sand Stream can do so too? Man I'm tired already, I just hope the lifetime changes dont break things
 
 ## Moves to implement
 Parting Shot - Return after stats
@@ -15,19 +16,19 @@ Knock Off - Item mechanic
 
 ## Abilities to implement
 Chlorophyll - Speed mechanic with instant change
-Blaze
-Rough Skin
-Intimidate
-Flower Veil
-Hospitality
+Blaze - Move thing
+Rough Skin - OnDamage, do more damage (check source)
+Intimidate  - OnEnter, change statistics
+Flower Veil - Protect status
+Hospitality - OnEnter, give ally 1/8? healing
 Unburden - Item mechanic
 Gale Wings - Speed mechanic
-Sturdy
-Levitate
-Sand Stream
-Drought
-Fairy Aura
-Sand Force
+Sturdy - OnDamage from full, leave at 1HP, 
+Levitate - Ignore Ground moves
+Sand Stream - OnEnter, Start Sandstorm
+Drought - OnEnter, start Sun
+Fairy Aura - Fairy moves do more, Dragon? does less
+Sand Force - MoveModifier In Sandstorm, boost moves
 
 ## Current Thoughts
 ---

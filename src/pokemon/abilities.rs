@@ -4,7 +4,7 @@ use strum::EnumCount;
 use strum_macros::{Display, AsRefStr, EnumString, EnumCount as EnumCountMacro};
 use serde::Deserialize;
 
-use crate::{battle::{BattleState, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{Pokemon, abilities::AbilityTriggerFlag::{CausesSpeedChange, OnWeatherChange}, moves::{BattleTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
+use crate::{battle::{BattleState, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{Pokemon, abilities::AbilityTriggerFlag::{CausesSpeedChange, OnEnter, OnWeatherChange}, moves::{BattleTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
 
 #[allow(non_camel_case_types)]
 #[derive(Deserialize, EnumString, Display, EnumCountMacro,
@@ -81,14 +81,22 @@ pub type SpeedModifier<'simulation> =
         &ActivePokemon<'battle, 'simulation>
     ) -> Option<PkmnRational>;
 
+pub type OnEnterEffect<'simulation> =
+    for<'battle> fn(
+        &BattleState<'battle, 'simulation>,
+        &ActivePokemon<'battle, 'simulation>
+    ) -> Vec<MoveEffect>;
+
 // #[derive(Clone)]
 pub struct PokemonAbility<'simulation> {
     pub name:PokemonAbilityName,
     /// Actions triggered on entering the field
-    pub on_enter: Vec<MoveEffect>,
+    // pub on_enter: Vec<MoveEffect>,
+    pub enter_fn:Option<OnEnterEffect<'simulation>>,
     pub type_flags: PokemonBitFlag128<AbilityTriggerFlag>,
     pub move_damage_modifier: Option<MoveDamageModifier<'simulation>>,
     pub speed_modif_func: Option<SpeedModifier<'simulation>>,
+    // pub 
     /// Ties this ability's lifetime to the simulation it was built in
     _marker: std::marker::PhantomData<&'simulation ()>,
 }
@@ -97,7 +105,8 @@ impl<'simulation> PokemonAbility<'simulation> {
     pub fn new(name:PokemonAbilityName) -> Self {
         PokemonAbility { 
             name, 
-            on_enter: vec![],
+            // on_enter: vec![],
+            enter_fn: None,
             type_flags: PokemonBitFlag128::<AbilityTriggerFlag>::empty(),
             move_damage_modifier: None,
             speed_modif_func: None,
@@ -111,20 +120,10 @@ impl<'simulation> PokemonAbility<'simulation> {
     }
 
     pub fn add_enter_effect(mut self,
-        target_type:BattleTarget,
-        stat_vec:Vec<(PokemonStatName, PokemonStatModifier)>,
+        enter_fn: OnEnterEffect<'simulation>
     ) -> Self {
-        // TODO: Need to make this generic
-        let stat_set = StatSet::make_stat_set(stat_vec);
-        self.on_enter.push(MoveEffect::Stat(stat_set, target_type, PkmnRational::ONE()));
-        self
-    }
-
-    // pub fn add_flag(mut self, flag:AbilityTriggerFlag)
-
-    // I cant add a function and 
-    pub fn add_damage_calc(mut self) -> Self {
-        self
+        self.enter_fn = Some(enter_fn);
+        self.add_flag(OnEnter)
     }
 
     fn active_starter_ability_logic(boost_type:PokemonType, 
@@ -205,6 +204,16 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
                 }
             ).add_flag(OnWeatherChange)
         },
+        PokemonAbilityName::Intimidate => {
+            PokemonAbility::new(ably_name)
+            .add_enter_effect(
+                |battle_state:&BattleState, source:&ActivePokemon| {
+                    return vec![MoveEffect::Stat(
+                        StatSet::make_stat_set(vec![(PokemonStatName::ATTACK, PokemonStatModifier::MINUS_1)]), 
+                        BattleTarget::OPPONENT_ALL, PkmnRational::ONE())]
+                }
+            )
+        }
         _ => PokemonAbility::new(ably_name),
     }
 }
