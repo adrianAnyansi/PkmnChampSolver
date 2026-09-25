@@ -196,7 +196,7 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
         PokemonAbilityName::Chlorophyll => {
             PokemonAbility::new(ably_name)
             .add_speed_modifier(
-                |battle_state:&BattleState, source:&ActivePokemon| {
+                |battle_state:&BattleState, _source:&ActivePokemon| {
                     if battle_state.weather == BattleWeatherState::SUN {
                         return Some(PkmnRational::new(2, 1))
                     }
@@ -207,7 +207,7 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
         PokemonAbilityName::Intimidate => {
             PokemonAbility::new(ably_name)
             .add_enter_effect(
-                |battle_state:&BattleState, source:&ActivePokemon| {
+                |_battle_state:&BattleState, _source:&ActivePokemon| {
                     return vec![MoveEffect::Stat(
                         StatSet::make_stat_set(vec![(PokemonStatName::ATTACK, PokemonStatModifier::MINUS_1)]), 
                         BattleTarget::OPPONENT_ALL, PkmnRational::ONE())]

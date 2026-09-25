@@ -12,6 +12,9 @@ mod move_test;
 #[cfg(test)]
 #[path = "battle/tests/battle_mechanics_tests.rs"]
 mod battle_mechanics;
+#[cfg(test)]
+#[path = "battle/tests/ability_test.rs"]
+mod ability_test;
 
 
 
@@ -1129,8 +1132,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     fn calc_move_damage(pkm_move: &mut PokemonMove,
         num_valid_targets:usize, 
-        atk_poke:&ActivePokemon, def_poke:&ActivePokemon,
-        battle_state:&BattleState) -> i32 {
+        atk_poke:&ActivePokemon<'battle, 'simulation>,
+        def_poke:&ActivePokemon<'battle, 'simulation>,
+        battle_state:&BattleState<'battle, 'simulation>) -> i32 {
 
             // Would like to cache this but base_power on weight or Foul Play
             // Requires more thought
@@ -1200,6 +1204,15 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 Strong Wings
                 Tar Shot = Fire x2
              */
+            
+            if let Some(ability_fn) = atk_poke.trained_pokemon.ability.move_damage_modifier {
+                let dmg = ability_fn(battle_state, atk_poke, def_poke, pkm_move);
+                if let Some(dmg_stat) = dmg {
+                    dmg_modifier_list.push_back(dmg_stat.float());
+                }
+            }
+
+
             let resist_mult = def_poke.get_type_mult(move_type);
             if resist_mult != 1.0 {
                 dmg_modifier_list.push_back(resist_mult);
