@@ -27,7 +27,7 @@ use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
 use crate::pokemon::abilities::PokemonAbilityName;
-use crate::pokemon::{self, Pokemon, PokemonName, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
+use crate::pokemon::{self, Pokemon, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
 
@@ -47,7 +47,12 @@ fn pkmn_damage_formula(power:i32,
     final_damage
 }
 
-
+/// Contains the speed order of the battle
+#[derive(Clone)]
+pub struct SpeedBattleAction<'battle> {
+    pub speed:&'battle u32,
+    pub battle_action: BattleAction<'battle>
+}
 
 
 /// Generic Event representing a current action in the turn state.
@@ -312,6 +317,18 @@ pub enum MoveResultEnum {
     SECOND_EFFECT
 }
 
+#[derive(Clone, Copy)]
+pub enum BattleStatePhase {
+    /// Must fill the field from the team
+    PreBattle,
+    /// Perform switches and onEnter turns
+    PreTurn,
+    /// Regular moves and etc
+    InTurn,
+    /// End of turn 
+    EndTurn
+}
+
 /// Represents the state of the battle between any action/resolve.
 /// This can include intermediate states
 #[derive(Clone)]
@@ -341,8 +358,13 @@ pub struct BattleState<'battle, 'simulation: 'battle> {
     /// i.e Rage Fist, Disguise, etc.
     pub internal_state: i32,
     // pub current_action: Option<String>,
+    
     // NOTE: If speed/ability/etc order is hard to order, create a different queue
     pub action_queue: VecDeque<BattleAction<'battle>>,
+    // Speed order
+    pub speed_action_queue:VecDeque<SpeedBattleAction<'battle>>,
+
+
     /// Current battle turn number
     pub turn_num: i32,
     /// Action number
@@ -351,7 +373,9 @@ pub struct BattleState<'battle, 'simulation: 'battle> {
     /// TODO: Move this out of battle state for easier cloning
     pub action_strs: Vec<String>,
     /// Bool flag when turn is complete
-    pub turn_complete: bool
+    pub turn_complete: bool,
+    /// Keep track of state in battle
+    pub turn_phase: BattleStatePhase,
 }
 
 impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
@@ -373,11 +397,13 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             internal_state: 0,
             // current_action: None,
             action_queue: VecDeque::new(),
+            speed_action_queue: VecDeque::new(),
             turn_num: 1,
             action_num: 0,
             // Keep track of messages from actions/debug this frame
             action_strs: Vec::new(), // TODO: Move to battle container
-            turn_complete: false
+            turn_complete: false,
+            turn_phase: BattleStatePhase::PreTurn
         }
     }
 
@@ -417,11 +443,26 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         = self.get_active_mut(position) {
 
             entered_poke.actions_taken = 0; // Reset actions taken
+
         } else {
             panic!("MissingNo Pokemon was sent out!")
         }
 
+        // separate cause of mutable borrow
+        if let Some(entered_poke) = self.get_active(position) {
+            // Trigger on_enter ability
+            if let Some(enter_fn) = entered_poke.trained_pokemon.ability.enter_fn {
+                for eff in enter_fn(self, entered_poke) {
+                    // TODO Have a bettter MoveEffect -> BattleAction
+                    let ba = BattleState::convert_effect_to_baction(
+                        &eff, position);
+                    self.action_queue.push_back(ba);
+                }
+            }
+        }
+
         // TODO: Trigger/Queue abilities/items with ON_ENTER flags
+        
     }
 
     pub fn return_poke(&mut self, position: BattlePosition) {
@@ -437,6 +478,12 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         let field_index_ref = self.get_active_idx_mut(position);
         *field_index_ref = None;
         
+    }
+
+    pub fn queue_speed_action(&mut self, battle_action:BattleAction<'battle>) {
+
+        self.action_queue.push_back(battle_action);
+        // sort speed 
     }
 
     /// Get pokemon name

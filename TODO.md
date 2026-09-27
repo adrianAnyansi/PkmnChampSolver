@@ -4,8 +4,19 @@
 ## Today
 --- 
 
+Ok I'm goaling for the simple test.
+Turns first, then back to moves/abilities stuff
+End with a timed simulation to know how long it takes to run.
+
+BattleState needs a turn 1
+
 Abilties has a bunch of triggers and functions
 I don't know a generic thing to return on these, like Hospitality should spawn a battle action? Sand Stream can do so too? Man I'm tired already, I just hope the lifetime changes dont break things
+
+So too many interactions with abilities, onEnter works differently with pokemon sent out on turn 0, speed checks, damage needs to have a full source (pokemon & move/ability), so all that's hard to track.
+
+Gonna pause, do the turn 0 and switch/faint stuff, then return to abilities maybe.
+Turn 0 also requires speed order... maybe I should do that
 
 ## Moves to implement
 Parting Shot - Return after stats
@@ -32,6 +43,29 @@ Sand Force - MoveModifier In Sandstorm, boost moves
 
 ## Current Thoughts
 ---
+
+For the Speed checks, the queue must maintain speed but also immediate effects
+Im thinking of using 2 queues instead
+action queue - [speed(reference?), battleAction]
+immediate queue [battleAction]
+
+immediate gets consumed first always, so example Tailwind updates queue but doesn't change 
+
+Lets focus, start of battle
+All pokemon are swapped in, on_enter/items activate
+Choose moves, execute moves, execute intermediate actions
+End of turn actions (including weather, etc)
+---
+Switch is an action during the move phase
+End of turn can trigger a switch action, which then happens in the start phase again
+
+I'm trying to work if turn 1 of a battle is special or not, technically its the same as all 4 pokemon switching in (from nothing) at once correct?
+yeah thats fine
+
+I need the speed pinned to the struct and updated correctly
+
+
+## Other concepts
 
 Thinking about some bigger concepts
 There needs to be an effective stat method, that also accounts for battle status (boosts from abilities, items, more)
