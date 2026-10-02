@@ -172,6 +172,11 @@ impl<'battle, 'simulation: 'battle> TrainedPokemon<'battle, 'simulation> {
 //     // etc
 // }
 
+/// Implements a key to sort battle actions
+// trait PokemonSpeedKey {
+//     fn speed_stat(&self) -> u32;
+// }
+
 /// Represents an active pokemon slot including current hp, status and boosts
 #[derive(Clone, Copy)]
 pub struct ActivePokemon<'battle, 'simulation: 'battle> {

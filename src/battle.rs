@@ -20,9 +20,9 @@ mod ability_test;
 
 use crate::battle;
 use crate::battle::DamageAfterEffect::Drain;
-use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, VolatileEnums};
+use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, TrainedPokemon, VolatileEnums};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
-use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_weather_modify_move};
+use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_move_priority, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
@@ -49,8 +49,9 @@ fn pkmn_damage_formula(power:i32,
 
 /// Contains the speed order of the battle
 #[derive(Clone)]
-pub struct SpeedBattleAction<'battle> {
-    pub speed:&'battle u32,
+pub struct SpeedBattleAction<'battle, 'simulation> {
+    pub priority: i8,
+    pub act_poke:&'battle ActivePokemon<'battle, 'simulation>,
     pub battle_action: BattleAction<'battle>
 }
 
@@ -79,6 +80,10 @@ pub enum BattleAction<'battle> {
     Protect(PokemonMoveName, BattlePosition, PkmnRational), 
     /// Add this message to the battle state, no action
     Message(String),
+    /// Pokemon is swapping out
+    Return(BattlePosition),
+    /// Pokemon is coming in
+    SendOut(BattlePosition, u8), // TODO: Index should be smaller
 
     /// TODO: Separate action of hit? Dunno
     HitAction(MoveAction<'battle>, String),
@@ -361,8 +366,8 @@ pub struct BattleState<'battle, 'simulation: 'battle> {
     
     // NOTE: If speed/ability/etc order is hard to order, create a different queue
     pub action_queue: VecDeque<BattleAction<'battle>>,
-    // Speed order
-    pub speed_action_queue:VecDeque<SpeedBattleAction<'battle>>,
+    // Speed ordered queue
+    pub speed_queue:VecDeque<SpeedBattleAction<'battle, 'simulation>>,
 
 
     /// Current battle turn number
@@ -397,7 +402,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             internal_state: 0,
             // current_action: None,
             action_queue: VecDeque::new(),
-            speed_action_queue: VecDeque::new(),
+            speed_queue: VecDeque::new(),
             turn_num: 1,
             action_num: 0,
             // Keep track of messages from actions/debug this frame
@@ -419,7 +424,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             bs
     }
 
-
+    // ==============================================
     // TEAM MECHANICS
 
     fn get_active_idx_mut(&mut self, position: BattlePosition) -> &mut Option<usize> {
@@ -485,6 +490,84 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         self.action_queue.push_back(battle_action);
         // sort speed 
     }
+
+    pub fn queue_pre_turn_switch(&mut self, 
+    act_poke:&'battle ActivePokemon<'battle, 'simulation>, 
+    position:BattlePosition) {
+        // TODO: Get current position
+        // let bat_pos = self.get_active_idx_mut(position);
+        
+        let speed_action = SpeedBattleAction{
+            priority: 6,
+            act_poke,
+            battle_action: BattleAction::Return(position)
+        };
+
+        self.speed_queue.push_back(speed_action);
+    }
+
+    /// Queue move with current speed order
+    pub fn queue_move_with_speed (
+        &'battle self,
+        speed_queue: &mut VecDeque<SpeedBattleAction<'battle, 'simulation>>,
+        source: BattlePosition,
+        pkm_move:&'battle PokemonMove,
+        targets:Vec<BattlePosition>, 
+        ) {
+
+        let move_action: MoveAction = MoveAction{
+            source, targets, pkm_move
+        };
+
+        // TODO: Better way to get reference
+        let act_poke = self.get_active(source).unwrap();
+        let battle_action: BattleAction = BattleAction::Move(move_action);
+        
+        let speed_action: SpeedBattleAction = SpeedBattleAction {
+            priority: get_move_priority(pkm_move),
+            act_poke,
+            battle_action
+        };
+
+        speed_queue.push_back(speed_action);
+    }
+
+    /// Get number of valid actions
+    pub fn get_num_valid_actions() -> u8 {
+        // Check for speed ties
+        1
+    }
+
+    /// Pop next action for processing
+    pub fn pop_next_action (
+        &'battle mut self
+    ) -> Option<BattleAction<'battle>> {
+        if let Some(action) = self.action_queue.pop_front() {
+            Some(action)
+        } else if let Some(speed_action) = self.speed_queue.pop_front() {
+            Some(speed_action.battle_action)
+        } else {
+            None
+        }
+    }
+
+    // TODO: Use param speed_tie to pop specific speed action
+
+    /// Sort by priority then speed, both descending; ties keep queue order
+    pub fn sort_speed_queue (&mut self) {
+        // TODO: See if the take can be avoided, sort_by_key is by element so value has to be cached on the element
+        let mut queue = std::mem::take(&mut self.speed_queue);
+        queue.make_contiguous().sort_by_key(|sa| std::cmp::Reverse(
+            (sa.priority, self.get_active_pokemon_speed(sa.act_poke))
+        ));
+        self.speed_queue = queue;
+    }
+
+
+    // -----------------------------------------------------------
+    // Utilty functions
+
+
 
     /// Get pokemon name
     fn get_default_poke_name (poke:Option<&ActivePokemon<'battle, 'simulation>>) -> String {
@@ -1731,5 +1814,11 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             BattleTarget::OPPONENT | BattleTarget::ALLY => dest.unwrap_or(source),
             _ => panic!("Invalid target {:?}", target)
         }
+    }
+
+    fn get_active_pokemon_speed(&self, act_poke:&ActivePokemon) -> u32 {
+        let speed = act_poke.get_active_stat(PokemonStatName::SPEED);
+        // TODO: Check paralysis, Trick Room, etc
+        speed as u32
     }
 }

@@ -44,6 +44,13 @@ Sand Force - MoveModifier In Sandstorm, boost moves
 ## Current Thoughts
 ---
 
+Speed order time, lets go
+priority, speed and action in the same struct
+
+I need to figure out future actions - ability queuing needs to also be in the action queue, and switching but pre-turn switching is different priority
+
+Ignore the speed-tie but it will be outside the BattleState
+
 For the Speed checks, the queue must maintain speed but also immediate effects
 Im thinking of using 2 queues instead
 action queue - [speed(reference?), battleAction]
@@ -62,8 +69,15 @@ End of turn can trigger a switch action, which then happens in the start phase a
 I'm trying to work if turn 1 of a battle is special or not, technically its the same as all 4 pokemon switching in (from nothing) at once correct?
 yeah thats fine
 
-I need the speed pinned to the struct and updated correctly
+I need the speed pinned to the struct and updated & sorted correctly- actually I need to pin the ActivePokemon so if it dies, changes speed order, I can make updates.
+Ok so it just needs more thought, if I attach the pokemon and pull the speed during a sort, that will be fine.
 
+For speed ties, I need to make a universe (on the speed tie) where each action has a different order, but ONLY when the speed tie actually matters- basically on sim_action i have to return both universes with swapped actions, or sim one and sim the other, returning both universes (and then confirm i dont need to swap after)
+actually peek_action (currently I manually pop from front of queue) can return multiple, and from there I'll make multiple universes and sim both?
+
+## Delay/Post moves
+How to delay/ make things go to the next turn?
+I have a way to work with charge, but I cant do Future Sight or things that need to save data
 
 ## Other concepts
 

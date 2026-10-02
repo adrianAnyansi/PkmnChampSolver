@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ BattleEffect, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}, PokemonFieldState}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
+use crate::{battle::{ BattleEffect, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}, PokemonFieldState}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveFlag::{PRIORITY_1, PRIORITY_4, PRIORITY_MINUS_1, PRIORITY_MINUS_6}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -857,3 +857,18 @@ pub fn get_custom_base_power(battle_state:&BattleState, source:&ActivePokemon,
     }
 }
 
+/// Return the move priority 
+pub fn get_move_priority(pkm_move:&PokemonMove) -> i8 {
+    if pkm_move.flags.has_flag(PRIORITY_1) {
+        return 1
+    // } else if pkm_move.flags.has_flag(PRIORITY_3) {
+    //     return 3
+    } else if pkm_move.flags.has_flag(PRIORITY_4) {
+        return 4
+    } else if pkm_move.flags.has_flag(PRIORITY_MINUS_1) {
+        return -1
+    } else if pkm_move.flags.has_flag(PRIORITY_MINUS_6) {
+        return -6
+    }
+    0
+}

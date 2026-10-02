@@ -345,3 +345,45 @@ fn test_wide_guard_blocks_multi_target_move_but_not_single_target() {
         matches!(action, BattleAction::Damage(dmg_effect) if dmg_effect.target == BattlePosition::F1)),
         "Dragon Claw should queue a Damage effect since Wide Guard doesn't block single-target moves");
 }
+
+
+
+#[test]
+/// dummy_bc is Tyranitar (F1, base speed 61) vs Venusaur (B1, base speed 80)
+fn test_sort_speed_queue_orders_faster_pokemon_first() {
+    let mut root_bc = dummy_bc();
+    let bs = root_bc.battle_state.as_mut().unwrap();
+
+    // act_poke borrows can't come from bs itself (self-referential), so use separate pokemon
+    let slow_poke: &'static ActivePokemon<'static, 'static> =
+        Box::leak(Box::new(ActivePokemon::quick(PokemonName::Tyranitar)));
+    let fast_poke: &'static ActivePokemon<'static, 'static> =
+        Box::leak(Box::new(ActivePokemon::quick(PokemonName::Venusaur)));
+    let dragon_claw: &'static PokemonMove = Box::leak(Box::new(get_move(PokemonMoveName::Dragon_Claw)));
+
+    assert!(bs.get_active_pokemon_speed(slow_poke) < bs.get_active_pokemon_speed(fast_poke));
+
+    // Slower pokemon is queued first
+    for (source, act_poke, target) in [
+        (BattlePosition::F1, slow_poke, BattlePosition::B1),
+        (BattlePosition::B1, fast_poke, BattlePosition::F1),
+    ] {
+        bs.speed_queue.push_back(SpeedBattleAction {
+            priority: get_move_priority(dragon_claw),
+            act_poke,
+            battle_action: BattleAction::Move(MoveAction {
+                source, targets: vec![target], pkm_move: dragon_claw,
+            }),
+        });
+    }
+
+    bs.sort_speed_queue();
+
+    let Some(BattleAction::Move(first)) = bs.speed_queue.pop_front().map(|sa| sa.battle_action)
+        else { panic!("expected a move action") };
+    let Some(BattleAction::Move(second)) = bs.speed_queue.pop_front().map(|sa| sa.battle_action)
+        else { panic!("expected a move action") };
+
+    assert_eq!(first.source, BattlePosition::B1, "faster Venusaur should move first");
+    assert_eq!(second.source, BattlePosition::F1, "slower Tyranitar should move second");
+}
