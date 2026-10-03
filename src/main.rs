@@ -1,5 +1,5 @@
 use crate::battle::battle_processor::{BattleContainer, BattleProcessor};
-use crate::battle::{data::{ActivePokemon, TrainedPokemon}, BattlePosition, BattleState};
+use crate::battle::{data::{ActivePokemon, TrainedPokemon}, FieldPosition, BattleState};
 use crate::math::PkmnRational;
 
 mod battle;
@@ -44,35 +44,35 @@ fn battle_container_test() {
         AbilityLibrary.get_ability(PokemonAbilityName::Chlorophyll),
         pokemon::poke_stat::PokemonNature::Brave, None);
     let venusaur_idx = bs.f_team.add_poke(ActivePokemon::new(&venusaur_trained));
-    bs.send_out(BattlePosition::F1, venusaur_idx);
+    bs.exec_send_out(FieldPosition::F1, venusaur_idx);
     let kingambit_idx = bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Kingambit));
-    bs.send_out(BattlePosition::F2, kingambit_idx);
+    bs.exec_send_out(FieldPosition::F2, kingambit_idx);
     let garchomp_trained = TrainedPokemon::new(garchomp,
         AbilityLibrary.get_ability(PokemonAbilityName::Nothing),
         pokemon::poke_stat::PokemonNature::Brave, None);
     let garchomp_idx = bs.b_team.add_poke(ActivePokemon::new(&garchomp_trained));
-    bs.send_out(BattlePosition::B1, garchomp_idx);
+    bs.exec_send_out(FieldPosition::B1, garchomp_idx);
 
 
     println!("Created {}, {} pokemon", venusaur, garchomp);
     let sludge_bomb_move = &pokemon::moves::get_move(PokemonMoveName::Sludge_Bomb);
 
     BattleState::queue_move(&mut bs.action_queue, 
-        BattlePosition::F1, 
+        FieldPosition::F1, 
         sludge_bomb_move, 
-        vec![BattlePosition::B1]);
+        vec![FieldPosition::B1]);
 
     let earthquake = &pokemon::moves::get_move(PokemonMoveName::Earthquake);
     BattleState::queue_move(&mut bs.action_queue, 
-        BattlePosition::B1, 
+        FieldPosition::B1, 
         earthquake, 
-        vec![BattlePosition::F1, BattlePosition::F2]);
+        vec![FieldPosition::F1, FieldPosition::F2]);
 
     let parting_shot = &pokemon::moves::get_move(PokemonMoveName::Parting_Shot);
     BattleState::queue_move(&mut bs.action_queue, 
-        BattlePosition::F2, 
+        FieldPosition::F2, 
         parting_shot, 
-        vec![BattlePosition::B1, BattlePosition::B2]);
+        vec![FieldPosition::B1, FieldPosition::B2]);
 
     // make the root container
     let bc = BattleContainer::simple(bs, 

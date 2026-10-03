@@ -1,6 +1,6 @@
 use crate::battle::battle_processor::BattleContainer;
 use crate::battle::data::{ActivePokemon, TrainedPokemon};
-use crate::battle::{BattleAction, BattlePosition, BattleState};
+use crate::battle::{BattleAction, FieldPosition, BattleState};
 use crate::math::{mult_and_round, PkmnRational};
 use crate::pokemon::abilities::{make_ability, PokemonAbilityName};
 use crate::pokemon::moves::{get_move, PokemonMoveName};
@@ -47,15 +47,15 @@ fn test_blaze_boosts_second_fire_move_below_one_third_hp() {
 
     BattleState::queue_move(
         &mut battle_state.action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &fire_move,
-        vec![BattlePosition::F1],
+        vec![FieldPosition::F1],
     );
     BattleState::queue_move(
         &mut battle_state.action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &fire_move,
-        vec![BattlePosition::F1],
+        vec![FieldPosition::F1],
     );
 
     let mut battle = BattleContainer::simple(battle_state, PkmnRational::ONE());
@@ -75,7 +75,7 @@ fn test_blaze_boosts_second_fire_move_below_one_third_hp() {
 
     battle.sim_next_action();
     let state = battle.battle_state.as_mut().unwrap();
-    let charizard = state.get_active_mut(BattlePosition::B1).unwrap();
+    let charizard = state.get_active_mut(FieldPosition::B1).unwrap();
     let max_hp = charizard.get_active_stat(crate::pokemon::poke_stat::PokemonStatName::HEALTH);
     charizard.current_hp = max_hp / 3 - 1;
     assert!(charizard.current_hp * 3 < max_hp);

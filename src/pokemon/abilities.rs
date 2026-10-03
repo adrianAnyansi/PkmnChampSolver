@@ -4,7 +4,7 @@ use strum::EnumCount;
 use strum_macros::{Display, AsRefStr, EnumString, EnumCount as EnumCountMacro};
 use serde::Deserialize;
 
-use crate::{battle::{BattleState, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{Pokemon, abilities::AbilityTriggerFlag::{CausesSpeedChange, OnEnter, OnWeatherChange}, moves::{BattleTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
+use crate::{battle::{BattleState, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{Pokemon, abilities::AbilityTriggerFlag::{CausesSpeedChange, OnEnter, OnWeatherChange}, moves::{FieldTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
 
 #[allow(non_camel_case_types)]
 #[derive(Deserialize, EnumString, Display, EnumCountMacro,
@@ -210,7 +210,7 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
                 |_battle_state:&BattleState, _source:&ActivePokemon| {
                     return vec![MoveEffect::Stat(
                         StatSet::make_stat_set(vec![(PokemonStatName::ATTACK, PokemonStatModifier::MINUS_1)]), 
-                        BattleTarget::OPPONENT_ALL, PkmnRational::ONE())]
+                        FieldTarget::OPPONENT_ALL, PkmnRational::ONE())]
                 }
             )
         }

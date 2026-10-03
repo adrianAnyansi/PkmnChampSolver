@@ -1,6 +1,6 @@
 use crate::battle::battle_processor::BattleContainer;
 use crate::battle::data::{ActivePokemon, BattleWeatherState, PokemonBattleState};
-use crate::battle::{BattleAction, BattlePosition, BattleState, DamageAfterEffect, DamageSource};
+use crate::battle::{BattleAction, FieldPosition, BattleState, DamageAfterEffect, DamageSource};
 use crate::math::PkmnRational;
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::{get_move, get_weather_modify_move, PokemonMoveName};
@@ -25,15 +25,15 @@ fn test_protect_blocks_earthquake_damage() {
 
     BattleState::queue_move(
         &mut bs.action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &protect,
-        vec![BattlePosition::B1],
+        vec![FieldPosition::B1],
     );
     BattleState::queue_move(
         &mut bs.action_queue,
-        BattlePosition::F1,
+        FieldPosition::F1,
         &earthquake,
-        vec![BattlePosition::B1],
+        vec![FieldPosition::B1],
     );
 
     assert_eq!(bs.action_queue.len(), 2);
@@ -62,15 +62,15 @@ fn test_rock_slide_flinches_before_heat_wave() {
     let battle_state = root_bc.battle_state.as_mut().unwrap();
     BattleState::queue_move(
         &mut battle_state.action_queue,
-        BattlePosition::F1,
+        FieldPosition::F1,
         &rock_slide,
-        vec![BattlePosition::B1],
+        vec![FieldPosition::B1],
     );
     BattleState::queue_move(
         &mut battle_state.action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &heat_wave,
-        vec![BattlePosition::F1],
+        vec![FieldPosition::F1],
     );
 
     root_bc.sim_next_action();
@@ -89,23 +89,23 @@ fn test_rock_slide_flinches_before_heat_wave() {
 
     assert_eq!(hit_bc.battle_ctns.len(), 2);
     let flinch_idx = hit_bc.battle_ctns.iter().position(|bc| {
-        bc.battle_state.as_ref().unwrap().get_active(BattlePosition::B1).unwrap()
+        bc.battle_state.as_ref().unwrap().get_active(FieldPosition::B1).unwrap()
             .battle_status.has_flag(PokemonBattleState::FLINCHING)
     }).unwrap();
     let flinch_bc = &mut hit_bc.battle_ctns[flinch_idx];
     let hit_state = flinch_bc.battle_state.as_ref().unwrap();
-    assert!(hit_state.get_active(BattlePosition::B1).unwrap().battle_status
+    assert!(hit_state.get_active(FieldPosition::B1).unwrap().battle_status
         .has_flag(PokemonBattleState::FLINCHING), "Pokemon should flinch in this universe");
     assert!(hit_state.action_strs.iter().any(|message| message.contains("Garchomp")
         && message.contains("flinched!")));
     assert!(hit_state.action_queue.iter().any(|action| matches!(action, BattleAction::Move(move_action)
         if move_action.pkm_move.name == PokemonMoveName::Heat_Wave)));
 
-    let tyranitar_hp = hit_state.get_active(BattlePosition::F1).unwrap().current_hp;
+    let tyranitar_hp = hit_state.get_active(FieldPosition::F1).unwrap().current_hp;
     flinch_bc.sim_next_action();
 
     let post_heat_wave_state = flinch_bc.battle_state.as_ref().unwrap();
-    assert_eq!(post_heat_wave_state.get_active(BattlePosition::F1).unwrap().current_hp, tyranitar_hp);
+    assert_eq!(post_heat_wave_state.get_active(FieldPosition::F1).unwrap().current_hp, tyranitar_hp);
     assert!(post_heat_wave_state.action_strs.iter().any(|message|
         message.contains("Garchomp") && message.contains("flinched!")));
     assert!(post_heat_wave_state.action_queue.is_empty());
@@ -115,27 +115,27 @@ fn test_rock_slide_flinches_before_heat_wave() {
 fn test_solar_beam_takes_two_move_actions_to_damage() {
     let mut root_bc = dummy_bc();
     let solar_beam = get_move(PokemonMoveName::Solar_Beam);
-    let initial_hp = root_bc.battle_state.as_ref().unwrap().get_active(BattlePosition::F1).unwrap().current_hp;
+    let initial_hp = root_bc.battle_state.as_ref().unwrap().get_active(FieldPosition::F1).unwrap().current_hp;
 
     BattleState::queue_move(
         &mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &solar_beam,
-        vec![BattlePosition::F1],
+        vec![FieldPosition::F1],
     );
     root_bc.sim_next_action();
 
     let charged_state = root_bc.battle_state.as_ref().unwrap();
-    assert_eq!(charged_state.get_active(BattlePosition::F1).unwrap().current_hp, initial_hp);
-    assert!(charged_state.get_active(BattlePosition::B1).unwrap().battle_status.has_flag(
+    assert_eq!(charged_state.get_active(FieldPosition::F1).unwrap().current_hp, initial_hp);
+    assert!(charged_state.get_active(FieldPosition::B1).unwrap().battle_status.has_flag(
         crate::battle::data::PokemonBattleState::CHARGING
     ));
 
     BattleState::queue_move(
         &mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &solar_beam,
-        vec![BattlePosition::F1],
+        vec![FieldPosition::F1],
     );
     root_bc.sim_next_action();
 
@@ -143,7 +143,7 @@ fn test_solar_beam_takes_two_move_actions_to_damage() {
         .any(|action| matches!(action, BattleAction::Damage(_))));
 
     root_bc.sim_next_action();
-    assert!(root_bc.battle_state.as_ref().unwrap().get_active(BattlePosition::F1).unwrap().current_hp < initial_hp);
+    assert!(root_bc.battle_state.as_ref().unwrap().get_active(FieldPosition::F1).unwrap().current_hp < initial_hp);
 }
 
 #[test]
@@ -152,25 +152,25 @@ fn test_solar_beam_skips_charge_in_sun() {
     let solar_beam = get_move(PokemonMoveName::Solar_Beam);
     let battle_state = root_bc.battle_state.as_mut().unwrap();
     battle_state.weather = BattleWeatherState::SUN;
-    let initial_hp = battle_state.get_active(BattlePosition::F1).unwrap().current_hp;
+    let initial_hp = battle_state.get_active(FieldPosition::F1).unwrap().current_hp;
 
     BattleState::queue_move(
         &mut battle_state.action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &solar_beam,
-        vec![BattlePosition::F1],
+        vec![FieldPosition::F1],
     );
     root_bc.sim_next_action();
 
     let battle_state = root_bc.battle_state.as_ref().unwrap();
-    assert!(!battle_state.get_active(BattlePosition::B1).unwrap().battle_status.has_flag(
+    assert!(!battle_state.get_active(FieldPosition::B1).unwrap().battle_status.has_flag(
         crate::battle::data::PokemonBattleState::CHARGING
     ));
     assert!(battle_state.action_queue.iter()
         .any(|action| matches!(action, BattleAction::Damage(_))));
 
     root_bc.sim_next_action();
-    assert!(root_bc.battle_state.as_ref().unwrap().get_active(BattlePosition::F1).unwrap().current_hp < initial_hp);
+    assert!(root_bc.battle_state.as_ref().unwrap().get_active(FieldPosition::F1).unwrap().current_hp < initial_hp);
 }
 
 #[test]
@@ -180,9 +180,9 @@ fn test_flare_blitz_queues_recoil_after_damage() {
 
     BattleState::queue_move(
         &mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &flare_blitz,
-        vec![BattlePosition::F1],
+        vec![FieldPosition::F1],
     );
 
     root_bc.sim_next_action();
@@ -197,8 +197,8 @@ fn test_flare_blitz_queues_recoil_after_damage() {
     assert!(matches!(
         damage_action,
         BattleAction::Damage(effect)
-            if effect.target == BattlePosition::F1
-                && effect.dmg_after_effect.0 == BattlePosition::B1
+            if effect.target == FieldPosition::F1
+                && effect.dmg_after_effect.0 == FieldPosition::B1
                 && matches!(effect.dmg_after_effect.1, Some((DamageAfterEffect::Recoil, _)))
     ));
 
@@ -214,7 +214,7 @@ fn test_flare_blitz_queues_recoil_after_damage() {
     assert!(matches!(
         recoil_action,
         BattleAction::Damage(effect)
-            if effect.target == BattlePosition::B1
+            if effect.target == FieldPosition::B1
                 && matches!(effect.damage_source, DamageSource::Recoil(_))
     ));
 }
@@ -230,15 +230,15 @@ fn test_protect_blocks_will_o_wisp_no_miss() {
 
     BattleState::queue_move(
         &mut bs.action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &protect,
-        vec![BattlePosition::B1],
+        vec![FieldPosition::B1],
     );
     BattleState::queue_move(
         &mut bs.action_queue,
-        BattlePosition::F1,
+        FieldPosition::F1,
         &inacc_move,
-        vec![BattlePosition::B1],
+        vec![FieldPosition::B1],
     );
 
     assert_eq!(bs.action_queue.len(), 2);
@@ -289,13 +289,13 @@ fn test_weather_ball_damage_boosts_and_changes_type_in_sun_with_dummy_bc() {
         battle_state.weather = weather;
 
         let weather_ball = get_move(PokemonMoveName::Weather_Ball);
-        let initial_hp = battle_state.get_active(BattlePosition::F1).unwrap().current_hp;
+        let initial_hp = battle_state.get_active(FieldPosition::F1).unwrap().current_hp;
 
         BattleState::queue_move(
             &mut battle_state.action_queue,
-            BattlePosition::B1,
+            FieldPosition::B1,
             &weather_ball,
-            vec![BattlePosition::F1],
+            vec![FieldPosition::F1],
         );
 
         root_bc.sim_next_action();
@@ -305,7 +305,7 @@ fn test_weather_ball_damage_boosts_and_changes_type_in_sun_with_dummy_bc() {
             .battle_state
             .as_ref()
             .unwrap()
-            .get_active(BattlePosition::F1)
+            .get_active(FieldPosition::F1)
             .unwrap()
             .current_hp;
 
@@ -329,9 +329,9 @@ fn test_matcha_gotcha_queues_damage_then_burn_then_heals_after_damage() {
 
     BattleState::queue_move(
         &mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::B1,
+        FieldPosition::B1,
         &matcha_gotcha,
-        vec![BattlePosition::F1],
+        vec![FieldPosition::F1],
     );
 
     root_bc.sim_next_action();
@@ -341,7 +341,7 @@ fn test_matcha_gotcha_queues_damage_then_burn_then_heals_after_damage() {
 
     assert!(matches!(
         queued_actions.next(),
-        Some(BattleAction::Damage(effect)) if effect.target == BattlePosition::F1
+        Some(BattleAction::Damage(effect)) if effect.target == FieldPosition::F1
     ), "Matcha Gotcha should queue damage first");
     assert!(matches!(
         queued_actions.next(),
@@ -360,6 +360,6 @@ fn test_matcha_gotcha_queues_damage_then_burn_then_heals_after_damage() {
         .expect("Matcha Gotcha damage should queue a heal");
     assert!(matches!(
         heal_action,
-        BattleAction::Heal(heal_effect) if heal_effect.target == BattlePosition::B1
+        BattleAction::Heal(heal_effect) if heal_effect.target == FieldPosition::B1
     ), "Matcha Gotcha should heal the user after dealing damage");
 }

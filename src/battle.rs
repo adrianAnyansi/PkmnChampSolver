@@ -27,7 +27,7 @@ use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
 use crate::pokemon::abilities::PokemonAbilityName;
-use crate::pokemon::{self, Pokemon, moves::{BattlePreAction, BattleTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
+use crate::pokemon::{self, Pokemon, moves::{BattlePreAction, FieldTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
 
@@ -49,9 +49,10 @@ fn pkmn_damage_formula(power:i32,
 
 /// Contains the speed order of the battle
 #[derive(Clone)]
-pub struct SpeedBattleAction<'battle, 'simulation> {
+pub struct SpeedBattleAction<'battle> {
     pub priority: i8,
-    pub act_poke:&'battle ActivePokemon<'battle, 'simulation>,
+    // pub act_poke:&'battle ActivePokemon<'battle, 'simulation>,
+    pub team_index: TeamIndex,
     pub battle_action: BattleAction<'battle>
 }
 
@@ -66,41 +67,44 @@ pub enum BattleAction<'battle> {
     /// Status being enacted by move or effect
     Status(StatusAction),
     /// Volatile status effect
-    VolatileStatus(BattlePosition, PokemonBattleState, PkmnRational),
+    VolatileStatus(FieldPosition, PokemonBattleState, PkmnRational),
     /// Ability effect
     AbilityAction, 
     /// Pokemon took damage from any source
     Damage(DamageEffect),
     /// Healing
     Heal(HealEffect),
-
-    /// Pokemon is fainting
-    Faint(BattlePosition),
     /// Protect state
-    Protect(PokemonMoveName, BattlePosition, PkmnRational), 
+    Protect(PokemonMoveName, FieldPosition, PkmnRational), 
+
     /// Add this message to the battle state, no action
     Message(String),
-    /// Pokemon is swapping out
-    Return(BattlePosition),
+
+    /// Pokemon is fainting
+    Faint(FieldPosition),
+    /// Pokemon is being sent back into team
+    Return(FieldPosition),
     /// Pokemon is coming in
-    SendOut(BattlePosition, u8), // TODO: Index should be smaller
+    SendOut(FieldPosition, u8), // TODO: Index should be smaller
+    /// Team choice, first 2* pokemon will be sent out. BattlePosition is for the team
+    ChooseTeam(FieldPosition, u8),
 
     /// TODO: Separate action of hit? Dunno
     HitAction(MoveAction<'battle>, String),
 
 
     /// Set flag on active pokemon, <position, state, set>
-    SetFlag(BattlePosition, PokemonBattleState, bool),
+    SetFlag(FieldPosition, PokemonBattleState, bool),
     /// Force pokemon to use move
-    ForceMove(BattlePosition, PokemonMoveName),
+    ForceMove(FieldPosition, PokemonMoveName),
 
     
     // TODO: Transition stat/status/protect to this version
     /// Subset to contain % action effects, no miss case. <action, target, %>
-    PctAction(BattlePctAction, BattlePosition, PkmnRational),
+    PctAction(BattlePctAction, FieldPosition, PkmnRational),
 
     /// PctActions with multiple targets
-    PctActions(BattlePctAction, [Option<BattlePosition>; 4], PkmnRational)
+    PctActions(BattlePctAction, [Option<FieldPosition>; 4], PkmnRational)
 }
 
 impl core::fmt::Display for BattleAction<'_> {
@@ -136,32 +140,51 @@ pub enum BattlePctAction {
     AddField(PokemonFieldState, bool)
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum BattleTeamSide {
+    FRONT,
+    BACK
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub struct TeamIndex {
+    pub team_side: BattleTeamSide,
+    pub index: usize
+}
 
 /// The selected position on the battlefield
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum BattlePosition {
+pub enum FieldPosition {
     F1,
     F2,
     B1,
     B2,
 }
 
-impl std::fmt::Display for BattlePosition {
+impl std::fmt::Display for FieldPosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 
         match self {
-            BattlePosition::F1 => write!(f, "Front1"),
-            BattlePosition::F2 => write!(f, "Front2"),
-            BattlePosition::B1 => write!(f, "Back_1"),
-            BattlePosition::B2 => write!(f, "Back_2"),
+            FieldPosition::F1 => write!(f, "Front1"),
+            FieldPosition::F2 => write!(f, "Front2"),
+            FieldPosition::B1 => write!(f, "Back_1"),
+            FieldPosition::B2 => write!(f, "Back_2"),
         }
     }
 }
 
-impl BattlePosition {
+impl FieldPosition {
+    
+    pub fn get_team(self) -> BattleTeamSide {
+        use FieldPosition::*;
+        match self {
+            B1 |B2 => BattleTeamSide::BACK,
+            F1 |F2 => BattleTeamSide::FRONT,
+        }
+    }
 
-    pub fn get_opposing(self) -> BattlePosition {
-        use BattlePosition::*;
+    pub fn get_opposing(self) -> FieldPosition {
+        use FieldPosition::*;
         match self {
             B1 => F1,
             B2 => F2,
@@ -170,8 +193,8 @@ impl BattlePosition {
         }
     }
 
-    pub fn get_ally(self) -> BattlePosition {
-        use BattlePosition::*;
+    pub fn get_ally(self) -> FieldPosition {
+        use FieldPosition::*;
         match self {
             B1 => B2,
             B2 => B1,
@@ -180,16 +203,16 @@ impl BattlePosition {
         }
     }
 
-    pub fn get_opposing_team(self) -> [BattlePosition;2] {
-        use BattlePosition::*;
+    pub fn get_opposing_team(self) -> [FieldPosition;2] {
+        use FieldPosition::*;
         match self {
             B1 | B2 => [F1,F2],
             F1 | F2 => [B1,B2]
         }
     }
 
-    pub fn get_ally_team(self) ->  [BattlePosition;2] {
-        use BattlePosition::*;
+    pub fn get_ally_team(self) ->  [FieldPosition;2] {
+        use FieldPosition::*;
         match self {
             B1 | B2 => [B1,B2],
             F1 | F2 => [F1,F2]
@@ -197,12 +220,20 @@ impl BattlePosition {
     }
 }
 
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, PartialEq)]
+pub enum PriorityTier {
+    SWITCH = 9,
+    MEGA = 8,
+    // ABILITY_ACTIVATE = 7,
+    PRIORITY_5 = 5,
+}
 
 /// Move being performed by Pokemon
 #[derive(Debug, Clone)]
 pub struct MoveAction<'battle> {
-    pub source: BattlePosition,
-    pub targets: Vec<BattlePosition>,
+    pub source: FieldPosition,
+    pub targets: Vec<FieldPosition>,
     pub pkm_move: &'battle PokemonMove,
 }
 
@@ -210,7 +241,7 @@ pub struct MoveAction<'battle> {
 /// Status action being effected a pokemon
 #[derive(Clone)]
 pub struct StatusAction {
-    pub targets: Vec<BattlePosition>,
+    pub targets: Vec<FieldPosition>,
     pub status: PokemonStatus,
     pub accuracy: PkmnRational
 }
@@ -227,7 +258,7 @@ pub struct BattleActionCtn<'battle> {
     /// Action type
     pub action: BattleAction<'battle>,
     // action type/enum
-    pub targets: Vec<BattlePosition>,
+    pub targets: Vec<FieldPosition>,
     pub accuracy: PkmnRational
 }
 
@@ -242,18 +273,18 @@ pub struct MoveResult {
 /// Damage Effect calculated by a move or other source
 #[derive(Clone)]
 pub struct DamageEffect {
-    pub target: BattlePosition,
+    pub target: FieldPosition,
     pub calc_damage: i32,
     // TODO: This needs to handle multiple things like Ability damage,
     // Whirlpool, regular moves, Status
     pub damage_source: DamageSource,
-    pub dmg_after_effect: (BattlePosition, Option<(DamageAfterEffect, PkmnRational)>)
+    pub dmg_after_effect: (FieldPosition, Option<(DamageAfterEffect, PkmnRational)>)
 }
 
 /// Heal effect calculated from another move or effect
 #[derive(Clone, Copy)]
 pub struct HealEffect {
-    pub target: BattlePosition,
+    pub target: FieldPosition,
     pub calc_healing: i32,
     /// TODO: Re-using damage until this more details are needed
     pub heal_source: DamageSource,
@@ -270,7 +301,7 @@ pub enum DamageAfterEffect {
 
 
 pub struct AddEffect {
-    pub target: BattlePosition,
+    pub target: FieldPosition,
     pub effect_type: BattleEffect,
     pub damage_source: String
 }
@@ -367,7 +398,7 @@ pub struct BattleState<'battle, 'simulation: 'battle> {
     // NOTE: If speed/ability/etc order is hard to order, create a different queue
     pub action_queue: VecDeque<BattleAction<'battle>>,
     // Speed ordered queue
-    pub speed_queue:VecDeque<SpeedBattleAction<'battle, 'simulation>>,
+    pub speed_queue:VecDeque<SpeedBattleAction<'battle>>,
 
 
     /// Current battle turn number
@@ -403,7 +434,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             // current_action: None,
             action_queue: VecDeque::new(),
             speed_queue: VecDeque::new(),
-            turn_num: 1,
+            turn_num: 0, // turn 0 is send out state
             action_num: 0,
             // Keep track of messages from actions/debug this frame
             action_strs: Vec::new(), // TODO: Move to battle container
@@ -418,8 +449,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             let f_idx = bs.f_team.add_poke(f_poke);
             let b_idx = bs.b_team.add_poke(b_poke);
 
-            bs.send_out(BattlePosition::F1, f_idx);
-            bs.send_out(BattlePosition::B1, b_idx);
+            bs.exec_send_out(FieldPosition::F1, f_idx);
+            bs.exec_send_out(FieldPosition::B1, b_idx);
 
             bs
     }
@@ -427,25 +458,46 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     // ==============================================
     // TEAM MECHANICS
 
-    fn get_active_idx_mut(&mut self, position: BattlePosition) -> &mut Option<usize> {
+    fn get_active_idx_mut(&mut self, position: FieldPosition) -> &mut Option<usize> {
         match position {
-            BattlePosition::F1 => &mut self.f_poke1,
-            BattlePosition::F2 => &mut self.f_poke2,
-            BattlePosition::B1 => &mut self.b_poke1,
-            BattlePosition::B2 => &mut self.b_poke2,
+            FieldPosition::F1 => &mut self.f_poke1,
+            FieldPosition::F2 => &mut self.f_poke2,
+            FieldPosition::B1 => &mut self.b_poke1,
+            FieldPosition::B2 => &mut self.b_poke2,
         }
     }
 
-    pub fn send_out(&mut self, position: BattlePosition, team_index: usize) {
+    /// Get TeamIndex from ActiveTeam
+    fn get_active_team_idx(&self, position:FieldPosition) -> Option<TeamIndex> {
+        let mut team_side = BattleTeamSide::FRONT;
+        if [FieldPosition::B1, FieldPosition::B2].contains(&position) {
+            team_side = BattleTeamSide::BACK;
+        }
+
+        let Some(index) = (match position {
+            FieldPosition::F1 => self.f_poke1,
+            FieldPosition::F2 => self.f_poke2,
+            FieldPosition::B1 => self.b_poke1,
+            FieldPosition::B2 => self.b_poke2,
+        }) else {
+            return None
+        };
+
+        Some(TeamIndex { team_side, index })
+    }
+
+    pub fn exec_send_out(&mut self, position: FieldPosition, team_index: usize) {
 
         // TODO: Change from InActivePokemon to ActivePokemon
 
         // Add pokemon to the field
         let position_ref = self.get_active_idx_mut(position);
+        if position_ref.is_some() {
+            panic!("Send out a pokemon while field was occupied.")
+        }
         *position_ref = Some(team_index);
 
-        if let Some( entered_poke) 
-        = self.get_active_mut(position) {
+        if let Some( entered_poke) = self.get_active_mut(position) {
 
             entered_poke.actions_taken = 0; // Reset actions taken
 
@@ -453,24 +505,36 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             panic!("MissingNo Pokemon was sent out!")
         }
 
+        let true_index = TeamIndex { team_side: position.get_team(), index: team_index };
         // separate cause of mutable borrow
-        if let Some(entered_poke) = self.get_active(position) {
-            // Trigger on_enter ability
-            if let Some(enter_fn) = entered_poke.trained_pokemon.ability.enter_fn {
-                for eff in enter_fn(self, entered_poke) {
-                    // TODO Have a bettter MoveEffect -> BattleAction
-                    let ba = BattleState::convert_effect_to_baction(
-                        &eff, position);
-                    self.action_queue.push_back(ba);
-                }
+        let effects: Vec<MoveEffect> = match self.get_active(position) {
+            Some(act_poke) => match act_poke.trained_pokemon.ability.enter_fn {
+                Some(enter_fn) => enter_fn(self, act_poke),
+                None => Vec::new(),
+            },
+            None => Vec::new(),
+        };
+
+        // TODO: Trigger/Queue items with ON_ENTER flags
+
+        for eff in effects {
+            let target_positions = match eff {
+                MoveEffect::Stat(_, t, _) | MoveEffect::Status(_, t, _)
+                | MoveEffect::General(_, t, _) | MoveEffect::AddFlag(_, t, _) =>
+                    BattleState::convert_target_to_position(t, position),
+                _ => vec![position],
+            };
+            for target_pos in target_positions {
+                let ba = BattleState::convert_effect_to_baction(&eff, target_pos);
+                // TODO: Ability priority depends on when switch in occurred
+                self.queue_action_with_speed(true_index, ba, Some(0));
             }
         }
 
-        // TODO: Trigger/Queue abilities/items with ON_ENTER flags
         
     }
 
-    pub fn return_poke(&mut self, position: BattlePosition) {
+    pub fn return_poke(&mut self, position: FieldPosition) {
         // Trigger ON_EXIT abilities/items/etc
         
         // Clear battle_status*
@@ -492,14 +556,16 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     pub fn queue_pre_turn_switch(&mut self, 
-    act_poke:&'battle ActivePokemon<'battle, 'simulation>, 
-    position:BattlePosition) {
+    // act_poke:&'battle ActivePokemon<'battle, 'simulation>, 
+    position:FieldPosition) {
         // TODO: Get current position
         // let bat_pos = self.get_active_idx_mut(position);
+        let team_index = self.get_active_team_idx(position).unwrap();
         
         let speed_action = SpeedBattleAction{
             priority: 6,
-            act_poke,
+            // act_poke,
+            team_index,
             battle_action: BattleAction::Return(position)
         };
 
@@ -508,11 +574,11 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     /// Queue move with current speed order
     pub fn queue_move_with_speed (
-        &'battle self,
-        speed_queue: &mut VecDeque<SpeedBattleAction<'battle, 'simulation>>,
-        source: BattlePosition,
+        &self,
+        speed_queue: &mut VecDeque<SpeedBattleAction<'battle>>,
+        source: FieldPosition,
         pkm_move:&'battle PokemonMove,
-        targets:Vec<BattlePosition>, 
+        targets:Vec<FieldPosition>, 
         ) {
 
         let move_action: MoveAction = MoveAction{
@@ -520,27 +586,44 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         };
 
         // TODO: Better way to get reference
-        let act_poke = self.get_active(source).unwrap();
+        // let act_poke = self.get_active(source).unwrap();
+        let team_index = self.get_active_team_idx(source).unwrap();
         let battle_action: BattleAction = BattleAction::Move(move_action);
         
         let speed_action: SpeedBattleAction = SpeedBattleAction {
             priority: get_move_priority(pkm_move),
-            act_poke,
+            // act_poke,
+            team_index,
             battle_action
         };
 
         speed_queue.push_back(speed_action);
     }
 
+    pub fn queue_action_with_speed (
+        &mut self,
+        team_index:TeamIndex,
+        battle_action:BattleAction<'battle>,
+        int_priority: Option<i8>
+    ) {
+        // let mut speed_queue  = std::mem::take(&mut self.speed_queue);
+        let priority = int_priority.unwrap_or(0);
+        
+        self.speed_queue.push_back( SpeedBattleAction { 
+            priority, team_index, battle_action }
+        );
+        // self.speed_queue = speed_queue;
+    }
+
     /// Get number of valid actions
     pub fn get_num_valid_actions() -> u8 {
-        // Check for speed ties
+        // TODO: Check for speed ties
         1
     }
 
     /// Pop next action for processing
     pub fn pop_next_action (
-        &'battle mut self
+        &mut self
     ) -> Option<BattleAction<'battle>> {
         if let Some(action) = self.action_queue.pop_front() {
             Some(action)
@@ -558,7 +641,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         // TODO: See if the take can be avoided, sort_by_key is by element so value has to be cached on the element
         let mut queue = std::mem::take(&mut self.speed_queue);
         queue.make_contiguous().sort_by_key(|sa| std::cmp::Reverse(
-            (sa.priority, self.get_active_pokemon_speed(sa.act_poke))
+            (sa.priority, self.get_active_pokemon_speed(sa.team_index))
         ));
         self.speed_queue = queue;
     }
@@ -579,16 +662,16 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     fn get_front_poke(&self) -> String {
         format!("{} {}", 
-            BattleState::get_default_poke_name(self.get_active(BattlePosition::F1)),
-            BattleState::get_default_poke_name(self.get_active(BattlePosition::F2))
+            BattleState::get_default_poke_name(self.get_active(FieldPosition::F1)),
+            BattleState::get_default_poke_name(self.get_active(FieldPosition::F2))
         )
     }
 
     pub fn get_print_state(&self) -> String {
 
         let back_row_str = format!("{} {}", 
-            BattleState::get_default_poke_name(self.get_active(BattlePosition::B1)),
-            BattleState::get_default_poke_name(self.get_active(BattlePosition::B2))
+            BattleState::get_default_poke_name(self.get_active(FieldPosition::B1)),
+            BattleState::get_default_poke_name(self.get_active(FieldPosition::B2))
         );
 
         let field_state = format!("Weather: {}, Other: {}", 
@@ -609,9 +692,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     /// Add a move to the action queue
     pub fn queue_move (
         action_queue: &mut VecDeque<BattleAction<'battle>>,
-        source: BattlePosition,
+        source: FieldPosition,
         pmove:&'battle PokemonMove,
-        targets:Vec<BattlePosition>, 
+        targets:Vec<FieldPosition>, 
         ) {
 
         let move_action: MoveAction = MoveAction{
@@ -626,28 +709,28 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
 
-    fn get_active_mut<'a>(&'a mut self, position: BattlePosition) -> Option<&'a mut ActivePokemon<'battle, 'simulation>> {
+    fn get_active_mut<'a>(&'a mut self, position: FieldPosition) -> Option<&'a mut ActivePokemon<'battle, 'simulation>> {
         match position {
-            BattlePosition::F1 => self.f_team.get_mut(self.f_poke1.unwrap_or(100) as usize),
-            BattlePosition::F2 => self.f_team.get_mut(self.f_poke2.unwrap_or(100) as usize),
-            BattlePosition::B1 => self.b_team.get_mut(self.b_poke1.unwrap_or(100) as usize),
-            BattlePosition::B2 => self.b_team.get_mut(self.b_poke2.unwrap_or(100) as usize),
+            FieldPosition::F1 => self.f_team.get_mut(self.f_poke1.unwrap_or(100) as usize),
+            FieldPosition::F2 => self.f_team.get_mut(self.f_poke2.unwrap_or(100) as usize),
+            FieldPosition::B1 => self.b_team.get_mut(self.b_poke1.unwrap_or(100) as usize),
+            FieldPosition::B2 => self.b_team.get_mut(self.b_poke2.unwrap_or(100) as usize),
         }
     }
 
-    pub fn get_active<'a>(&'a self, position: BattlePosition) -> Option<&'a ActivePokemon<'battle, 'simulation>> {
+    pub fn get_active<'a>(&'a self, position: FieldPosition) -> Option<&'a ActivePokemon<'battle, 'simulation>> {
         match position {
-            BattlePosition::F1 => self.f_team.get(self.f_poke1.unwrap_or(100) as usize),
-            BattlePosition::F2 => self.f_team.get(self.f_poke2.unwrap_or(100) as usize),
-            BattlePosition::B1 => self.b_team.get(self.b_poke1.unwrap_or(100) as usize),
-            BattlePosition::B2 => self.b_team.get(self.b_poke2.unwrap_or(100) as usize),
+            FieldPosition::F1 => self.f_team.get(self.f_poke1.unwrap_or(100) as usize),
+            FieldPosition::F2 => self.f_team.get(self.f_poke2.unwrap_or(100) as usize),
+            FieldPosition::B1 => self.b_team.get(self.b_poke1.unwrap_or(100) as usize),
+            FieldPosition::B2 => self.b_team.get(self.b_poke2.unwrap_or(100) as usize),
         }
     }
 
     // Can perform checks
     // Check if stat is entirely blocked, if so quit simulation
     fn can_perform_stat(&self,
-        stat_modf:&StatModf, target_pos:BattlePosition) -> bool
+        stat_modf:&StatModf, target_pos:FieldPosition) -> bool
     {
 
             // TODO: Check if blocked by pokemon ability/item
@@ -741,7 +824,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     /// Simulate multiple* stat changes for a pokemon in order
-    fn sim_stat(&self, stat_set:&StatSet, target_pos:BattlePosition, rat:PkmnRational) -> Vec<BattleContainer<'battle, 'simulation>> {
+    fn sim_stat(&self, stat_set:&StatSet, target_pos:FieldPosition, rat:PkmnRational) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         // Calculate and validate final stat changes
         let valid_modfs:Vec<StatModf> = // for Some(stat_modf) in stat_set.arr {
@@ -823,7 +906,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     /// Simulate a volatile status being applied
-    fn exec_vol_status(&mut self, vol_status:PokemonBattleState, b_position:BattlePosition) {
+    fn exec_vol_status(&mut self, vol_status:PokemonBattleState, b_position:FieldPosition) {
 
         // TODO: check item/ability/field effects for volatile status block/change
 
@@ -848,7 +931,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     /// Simulate a pokemon protecting
-    fn sim_protect(&self, move_name:PokemonMoveName, target_pos:BattlePosition, acc:PkmnRational) -> Vec<BattleContainer<'battle, 'simulation>> {
+    fn sim_protect(&self, move_name:PokemonMoveName, target_pos:FieldPosition, acc:PkmnRational) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         let mut result_vec:Vec<BattleContainer> = Vec::new();
 
@@ -951,7 +1034,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     // Perform generic NULL(miss) case for all moves
-    fn perform_generic_null_case (&mut self, target_pos:BattlePosition, move_action: &MoveAction) {
+    fn perform_generic_null_case (&mut self, target_pos:FieldPosition, move_action: &MoveAction) {
         
         let source_pkmn = self.get_active_mut(target_pos);
 
@@ -1043,7 +1126,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         self.exec_move_redirection(move_action);
         
         // TODO: Do valid target function check
-        let move_targets:Vec<(&ActivePokemon, &BattlePosition)> = move_action.targets.iter().filter_map(
+        let move_targets:Vec<(&ActivePokemon, &FieldPosition)> = move_action.targets.iter().filter_map(
             |position| {
                 if let Some(poke) = self.get_active(*position) {
                     return Some((poke, position))
@@ -1379,7 +1462,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         }
 
         if move_action.pkm_move.flags.has_flag(IGNORE_ACC) 
-        || move_action.pkm_move.target_type == BattleTarget::SELF {
+        || move_action.pkm_move.target_type == FieldTarget::SELF {
             move_acc = PkmnRational::ONE(); //
         } else {
             // TODO: Item/ability accuracy modifications
@@ -1391,7 +1474,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
 
     /// Return if this is a valid target for this move
-    fn is_valid_target(&self, move_action: &MoveAction, target_pos:BattlePosition) -> bool {
+    fn is_valid_target(&self, move_action: &MoveAction, target_pos:FieldPosition) -> bool {
 
         if let Some(poke) = self.get_active(target_pos) {
             // check there's no type immunity to move
@@ -1474,7 +1557,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     /// Perform a statistic change on the pokemon
-    fn exec_stat_change(&mut self, target_pos:BattlePosition, stat_modf:&StatModf) {
+    fn exec_stat_change(&mut self, target_pos:FieldPosition, stat_modf:&StatModf) {
         let target_poke = self.get_active_mut(target_pos);
         let target_act_pkmn = target_poke.expect("Non-null");
     
@@ -1486,7 +1569,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     /// Perform a status change on the battle state
     fn exec_status_change(&mut self, 
-        position:BattlePosition, 
+        position:FieldPosition, 
         // target_act_poke:&mut ActivePokemon,
         status_action: &StatusAction) {
         
@@ -1695,6 +1778,41 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         
     }
 
+    // ===================================================================
+    // battle state things
+
+    /// Set team and send out 1-2 pokemon to the field
+    pub fn exec_set_team(&mut self, team_side:BattleTeamSide, 
+        team:&Vec<&'battle TrainedPokemon<'battle, 'simulation>>) {
+
+        // set team
+        let battle_team:&mut ActiveTeam<'battle, 'simulation>;
+        let field_pos: [FieldPosition;2];
+        if team_side == BattleTeamSide::FRONT {
+            battle_team = &mut self.f_team;
+            field_pos = [FieldPosition::F1, FieldPosition::F2];
+        } else {
+            battle_team = &mut self.b_team;
+            field_pos = [FieldPosition::B1, FieldPosition::B2];
+        }
+        
+        // NOTE: borrow checked stuff, rethink eventually 
+        for trained_poke in team {
+            let act_poke = ActivePokemon::new(trained_poke);
+            battle_team.add_poke(act_poke);
+        }
+        
+        let team_len = team.len();
+        // generate send_out actions for this team
+        const MAX_FIELD:usize = 2; // TODO: Move to constant based on battle type
+        let max_fields = MAX_FIELD.min(team_len);
+        
+        for team_index in 0..max_fields {
+            let bat_pos = field_pos[team_index];
+            self.exec_send_out(bat_pos, team_index);
+        }
+
+    }
 
     /// Resolve end of turn effects, set flag for turn complete
     pub fn mark_end_of_turn(&mut self) -> &mut Self {
@@ -1709,7 +1827,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
         // TODO: Go through all abilties & etc to resolve end of turn stuff ``
 
-        use BattlePosition::*;
+        use FieldPosition::*;
         for pos in [F1, F2, B1, B2] {
             let Some(act_poke) = self.get_active_mut(pos) else { continue };
             
@@ -1728,7 +1846,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     /// Convert a MoveEffect to an Action with Damage/Status/etc
     /// Targets must be determined before calling this
     pub fn convert_effect_to_baction (move_effect:&MoveEffect, 
-        effect_target_pos:BattlePosition)
+        effect_target_pos:FieldPosition)
     -> BattleAction<'battle> {
 
         match move_effect {
@@ -1779,44 +1897,52 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     /// TODO: Return tuple with number of targets
-    pub fn convert_target_to_position (target:BattleTarget, 
-        source: BattlePosition) -> Vec<BattlePosition> {
-            use BattlePosition::*;
+    pub fn convert_target_to_position (target:FieldTarget, 
+        source: FieldPosition) -> Vec<FieldPosition> {
+            use FieldPosition::*;
         match target {
-            BattleTarget::SELF => vec![source],
-            BattleTarget::ALL_EXCEPT_SELF => {
+            FieldTarget::SELF => vec![source],
+            FieldTarget::ALL_EXCEPT_SELF => {
                 let mut vec = source.get_opposing_team().to_vec();
                 vec.push(source.get_ally());
                 vec
             },
-            BattleTarget::ALLY => vec![source.get_ally()],
-            BattleTarget::ALLY_ALL => source.get_ally_team().to_vec(),
-            BattleTarget::ALLY_ANY => source.get_ally_team().to_vec(),
-            BattleTarget::ANY_EXCEPT_SELF => {
+            FieldTarget::ALLY => vec![source.get_ally()],
+            FieldTarget::ALLY_ALL => source.get_ally_team().to_vec(),
+            FieldTarget::ALLY_ANY => source.get_ally_team().to_vec(),
+            FieldTarget::ANY_EXCEPT_SELF => {
                 let mut vec = source.get_opposing_team().to_vec();
                 vec.push(source.get_ally());
                 vec
             }
-            BattleTarget::OPPONENT => vec![source.get_opposing()],
-            BattleTarget::OPPONENT_ALL => source.get_opposing_team().to_vec(),
-            BattleTarget::ALL_AND_SELF => vec![F1, F2, B1, B2],
+            FieldTarget::OPPONENT => vec![source.get_opposing()],
+            FieldTarget::OPPONENT_ALL => source.get_opposing_team().to_vec(),
+            FieldTarget::ALL_AND_SELF => vec![F1, F2, B1, B2],
         }
     }
 
     /// Convert Effect Target to Position, intended for non-move targeting
     pub fn convert_effect_target_to_position (
-        target: BattleTarget,
-        source: BattlePosition,
-        dest: Option<BattlePosition>,
-    ) -> BattlePosition {
+        target: FieldTarget,
+        source: FieldPosition,
+        dest: Option<FieldPosition>,
+    ) -> FieldPosition {
         match target {
-            BattleTarget::SELF => source,
-            BattleTarget::OPPONENT | BattleTarget::ALLY => dest.unwrap_or(source),
+            FieldTarget::SELF => source,
+            FieldTarget::OPPONENT | FieldTarget::ALLY => dest.unwrap_or(source),
             _ => panic!("Invalid target {:?}", target)
         }
     }
 
-    fn get_active_pokemon_speed(&self, act_poke:&ActivePokemon) -> u32 {
+    fn get_active_pokemon_speed(&self, team_index:TeamIndex) -> u32 {
+        let team;
+        if team_index.team_side == BattleTeamSide::FRONT {
+            team = &self.f_team;
+        } else {
+            team = &self.b_team;
+        }
+        let act_poke = team.get(team_index.index).unwrap();
+        // let act_poke = self.get_active(position);
         let speed = act_poke.get_active_stat(PokemonStatName::SPEED);
         // TODO: Check paralysis, Trick Room, etc
         speed as u32

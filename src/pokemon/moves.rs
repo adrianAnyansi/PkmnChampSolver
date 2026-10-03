@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use strum_macros::{Display, EnumString};
 
-use crate::{battle::{ BattleEffect, BattlePosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}, PokemonFieldState}, }, math::PkmnRational, pokemon::{moves::{BattleTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveFlag::{PRIORITY_1, PRIORITY_4, PRIORITY_MINUS_1, PRIORITY_MINUS_6}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
+use crate::{battle::{ BattleEffect, FieldPosition, BattleState, MoveAction, data::{ActivePokemon, BattleWeatherState::{self, SANDSTORM, SNOW, STRONG_WINDS}, PokemonBattleState::{self, CENTER_OF_ATTENTION}, PokemonFieldState}, }, math::PkmnRational, pokemon::{moves::{FieldTarget::{ALLY, OPPONENT, OPPONENT_ALL}, PokemonMoveFlag::{PRIORITY_1, PRIORITY_4, PRIORITY_MINUS_1, PRIORITY_MINUS_6}, PokemonMoveName::{Fake_Out, Solar_Beam, Stomping_Tantrum, }}, poke_stat::{PokemonStatModifier::{self, MINUS_1, PLUS_1, PLUS_2}, PokemonStatName::{self, ATTACK, DEFENSE, SPECIAL_ATTACK, SPECIAL_DEFENSE}}, types::PokemonType::ICE}};
 use crate::battle::data::PokemonStatus::{self, BURNED, PARALYZED, SLEEP};
 use crate::pokemon::types::PokemonType;
 
@@ -19,7 +19,7 @@ pub enum PokemonMoveCategory {
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, EnumString, Display, PartialEq)]
-pub enum BattleTarget {
+pub enum FieldTarget {
     /// Target 1 opponent
     OPPONENT,
     /// Target your ally but not yourself
@@ -40,8 +40,8 @@ pub enum BattleTarget {
     ALL_AND_SELF,
 }
 
-use BattleTarget::*;
-impl BattleTarget {
+use FieldTarget::*;
+impl FieldTarget {
     /// Is this move a single target move
     pub fn is_single_target(&self) -> bool {
         return [OPPONENT, ALLY, ALLY_ANY, ANY_EXCEPT_SELF].contains(self)
@@ -69,7 +69,7 @@ pub struct PokemonMove {
     pp: i32,
     pub priority: i8,
     contact: bool,
-    pub target_type: BattleTarget,
+    pub target_type: FieldTarget,
     pub hit_actions: Vec<MoveEffect>,
 
     pub flags: PokemonBitFlag128<PokemonMoveFlag>
@@ -79,15 +79,15 @@ pub struct PokemonMove {
 #[derive(Debug, Copy, Clone)]
 pub enum MoveEffect {
     /// Flag effect
-    Stat(StatSet, BattleTarget, PkmnRational),
-    Status(PokemonStatus, BattleTarget, PkmnRational),
-    General(BattleEffect, BattleTarget, PkmnRational),
+    Stat(StatSet, FieldTarget, PkmnRational),
+    Status(PokemonStatus, FieldTarget, PkmnRational),
+    General(BattleEffect, FieldTarget, PkmnRational),
     /// Add flag to target
-    AddFlag(PokemonBattleState, BattleTarget, PkmnRational),
+    AddFlag(PokemonBattleState, FieldTarget, PkmnRational),
     /// Add field flag to field
     AddFieldFlag(PokemonFieldState, PkmnRational),
     /// Charge move, Source, Target
-    Charge(BattlePosition)
+    Charge(FieldPosition)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -122,14 +122,14 @@ impl StatSet {
 /// Indicates a change in stat boosts
 #[derive(Clone, Copy, Debug)]
 pub struct StatChange {
-    pub target_type: BattleTarget,
+    pub target_type: FieldTarget,
     pub name: PokemonStatName,
     pub change: PokemonStatModifier,
     pub accuracy: f64
 }
 
 impl StatChange {
-    pub fn new (target_type:BattleTarget, 
+    pub fn new (target_type:FieldTarget, 
         stat_name:PokemonStatName,
         change_amt:PokemonStatModifier,
         acc:f64) -> StatChange {
@@ -163,7 +163,7 @@ impl<'simulation> PokemonMove {
 
     pub fn status (move_name:PokemonMoveName,
         move_type:PokemonType,
-        target: BattleTarget
+        target: FieldTarget
     ) -> Self {
         PokemonMove {
             name: move_name,
@@ -181,7 +181,7 @@ impl<'simulation> PokemonMove {
     }
 
     pub fn set_attr(mut self,
-        power:i32, acc:f64, target:BattleTarget 
+        power:i32, acc:f64, target:FieldTarget 
     ) -> Self {
         self.power = power;
         self.accuracy = acc;
@@ -194,13 +194,13 @@ impl<'simulation> PokemonMove {
         self
     }
 
-    pub fn set_target(mut self, target: BattleTarget) -> Self {
+    pub fn set_target(mut self, target: FieldTarget) -> Self {
         self.target_type = target;
         self
     }
 
     pub fn stat_change(mut self, 
-        target_type:BattleTarget,
+        target_type:FieldTarget,
         stat_vec:Vec<(PokemonStatName, PokemonStatModifier)>,
         acc: PkmnRational
         ) -> Self 
@@ -213,7 +213,7 @@ impl<'simulation> PokemonMove {
     pub fn status_effect(mut self,
         status_type:PokemonStatus,
         chance:PkmnRational,
-        target:BattleTarget,) -> Self {
+        target:FieldTarget,) -> Self {
 
             self.hit_actions.push(MoveEffect::Status(status_type, target, chance));
             self
@@ -232,12 +232,12 @@ impl<'simulation> PokemonMove {
 
     pub fn add_flinch(mut self, chance:PkmnRational) -> Self {
             self.hit_actions.push(MoveEffect::General(
-                BattleEffect::Flinch, BattleTarget::OPPONENT, chance));
+                BattleEffect::Flinch, FieldTarget::OPPONENT, chance));
             self
     }
 
     pub fn add_generic(mut self, b_effect:BattleEffect,
-    target_pos:BattleTarget, rat:PkmnRational) -> Self 
+    target_pos:FieldTarget, rat:PkmnRational) -> Self 
     {
         // let real_rat = rat.unwrap_or(PkmnRational::ONE());
         self.hit_actions.push(MoveEffect::General(b_effect, target_pos, rat));
@@ -245,7 +245,7 @@ impl<'simulation> PokemonMove {
     }
 
     pub fn add_battle_flag(mut self, battle_flag:PokemonBattleState,
-        target_pos:BattleTarget, rat:PkmnRational) -> Self
+        target_pos:FieldTarget, rat:PkmnRational) -> Self
     {
         self.hit_actions.push(MoveEffect::AddFlag(
             battle_flag, target_pos, rat
@@ -305,7 +305,7 @@ impl<'simulation> PokemonMove {
             }
         }
 
-    fn get_flinch_chance( &self, target_type:BattleTarget, chance:f64) -> BattlePreEffect {
+    fn get_flinch_chance( &self, target_type:FieldTarget, chance:f64) -> BattlePreEffect {
         return BattlePreEffect {
             effect_type: BattleEffect::Flinch,
             target_type: target_type,
@@ -321,7 +321,7 @@ pub enum BattlePreAction {
 }
 
 pub struct BattlePreEffect {
-    pub target_type: BattleTarget,
+    pub target_type: FieldTarget,
     pub effect_type: BattleEffect,
     pub accuracy: f64,
     pub damage_source: String 
@@ -579,7 +579,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
 
     use PokemonMoveCategory::*;
     use PokemonType::*;
-    use BattleTarget::*;
+    use FieldTarget::*;
     use PokemonMoveName::*;
     use PokemonMoveFlag::*;
     use PokemonStatModifier::*;
@@ -589,7 +589,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Draco_Meteor => PokemonMove::new(
             pkmn_move_name, DRAGON, Special
         ).set_attr(130, 0.9, OPPONENT)
-        .stat_change(BattleTarget::SELF, 
+        .stat_change(FieldTarget::SELF, 
             vec![(SPECIAL_ATTACK, MINUS_2)],
             PkmnRational::ONE()),
 
@@ -602,7 +602,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             PokemonMoveName::Dragon_Claw, 
             PokemonType::DRAGON, 
             PokemonMoveCategory::Physical 
-        ).set_attr(80, 1.0, BattleTarget::OPPONENT),
+        ).set_attr(80, 1.0, FieldTarget::OPPONENT),
 
         PokemonMoveName::Sludge_Bomb => PokemonMove::new(
             PokemonMoveName::Sludge_Bomb,
@@ -611,7 +611,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         ).set_attr(90, 1.0, OPPONENT)
         .status_effect(PokemonStatus::POISONED, 
              PkmnRational::new(30, 100),
-            BattleTarget::OPPONENT),
+            FieldTarget::OPPONENT),
 
         PokemonMoveName::Earth_Power => PokemonMove::new(
             PokemonMoveName::Earth_Power,
@@ -630,7 +630,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Heat_Wave => PokemonMove::new(
             pkmn_move_name, FIRE, Special
         ).set_attr(95, PkmnRational::pct(90).float(), OPPONENT_ALL)
-        .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,),
+        .status_effect(BURNED, PkmnRational::pct(10), FieldTarget::OPPONENT,),
 
         
         PokemonMoveName::Solar_Beam => PokemonMove::new(
@@ -652,7 +652,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         .add_flag(PokemonMoveFlag::INCRM_PROTECT_COUNTER)
         .add_flag(PokemonMoveFlag::PROTECT_ACC)
         .add_flag(PokemonMoveFlag::PRIORITY_4)
-        .add_generic(BattleEffect::Protect, BattleTarget::SELF, PkmnRational::ONE())
+        .add_generic(BattleEffect::Protect, FieldTarget::SELF, PkmnRational::ONE())
         .add_dummy_flag("priority +4"),
 
         PokemonMoveName::Earthquake => PokemonMove::new(
@@ -682,7 +682,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         PokemonMoveName::Flare_Blitz => PokemonMove::new(
             pkmn_move_name, FIRE, Physical
         ).set_attr(120, 1.0, OPPONENT)
-        .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
+        .status_effect(BURNED, PkmnRational::pct(10), FieldTarget::OPPONENT,)
         .add_flag(RECOIL_1_3RD),
 
 
@@ -717,14 +717,14 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             pkmn_move_name, GRASS, Special
         ).set_power(80).set_target(OPPONENT_ALL)
         .add_flag(HEAL_1_2HF)
-        .status_effect(BURNED, PkmnRational::pct(20), BattleTarget::OPPONENT,)
+        .status_effect(BURNED, PkmnRational::pct(20), FieldTarget::OPPONENT,)
         .add_flag(MOVE_THAW)
         .add_dummy_flag("move thaw"),
 
         Rage_Powder => PokemonMove::status(
             pkmn_move_name, BUG, SELF
         ).add_dummy_flag("center_of_attention")
-        .add_battle_flag(PokemonBattleState::CENTER_OF_ATTENTION, BattleTarget::SELF, PkmnRational::ONE())
+        .add_battle_flag(PokemonBattleState::CENTER_OF_ATTENTION, FieldTarget::SELF, PkmnRational::ONE())
         .add_flag(CENTER_OF_ATTENTION),
 
         Trick_Room => PokemonMove::status(
@@ -742,9 +742,9 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Dire_Claw => PokemonMove::new(
             pkmn_move_name, POISON, Physical
         ).set_power(80)
-        .status_effect(BURNED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
-        .status_effect(PARALYZED, PkmnRational::pct(10), BattleTarget::OPPONENT,)
-        .status_effect(SLEEP, PkmnRational::pct(10), BattleTarget::OPPONENT,)
+        .status_effect(BURNED, PkmnRational::pct(10), FieldTarget::OPPONENT,)
+        .status_effect(PARALYZED, PkmnRational::pct(10), FieldTarget::OPPONENT,)
+        .status_effect(SLEEP, PkmnRational::pct(10), FieldTarget::OPPONENT,)
         .add_flag(PokemonMoveFlag::SLICING),
         
         Swords_Dance => PokemonMove::status(
@@ -771,12 +771,12 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Will_O_Wisp => PokemonMove::status(
             pkmn_move_name, FIRE, OPPONENT
         ).set_attr(0, PkmnRational::pct(85).float(), OPPONENT)
-        .status_effect(BURNED, PkmnRational::ONE(), BattleTarget::OPPONENT),
+        .status_effect(BURNED, PkmnRational::ONE(), FieldTarget::OPPONENT),
         
         Thunderbolt => PokemonMove::new(
             pkmn_move_name, ELECTRIC, Special
         ).set_power(90)
-        .status_effect(PARALYZED, PkmnRational::pct(10), BattleTarget::OPPONENT,),
+        .status_effect(PARALYZED, PkmnRational::pct(10), FieldTarget::OPPONENT,),
 
         Hydro_Pump => PokemonMove::new(
             pkmn_move_name, WATER, Special

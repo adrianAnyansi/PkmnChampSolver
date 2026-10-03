@@ -1,22 +1,17 @@
 # TODO (Overview)
 
+Goal - all <12 pokemon, moves and abilities done
+Then a timed simulation and optimization
+I'm strudging forward
 
 ## Today
 --- 
 
-Ok I'm goaling for the simple test.
-Turns first, then back to moves/abilities stuff
-End with a timed simulation to know how long it takes to run.
+Implementing the send_out phase of turn 0
+So abilities can be tied to enter/exit
 
-BattleState needs a turn 1
+Then I'll do parting shot, and the logic for that
 
-Abilties has a bunch of triggers and functions
-I don't know a generic thing to return on these, like Hospitality should spawn a battle action? Sand Stream can do so too? Man I'm tired already, I just hope the lifetime changes dont break things
-
-So too many interactions with abilities, onEnter works differently with pokemon sent out on turn 0, speed checks, damage needs to have a full source (pokemon & move/ability), so all that's hard to track.
-
-Gonna pause, do the turn 0 and switch/faint stuff, then return to abilities maybe.
-Turn 0 also requires speed order... maybe I should do that
 
 ## Moves to implement
 Parting Shot - Return after stats
@@ -44,36 +39,37 @@ Sand Force - MoveModifier In Sandstorm, boost moves
 ## Current Thoughts
 ---
 
-Speed order time, lets go
-priority, speed and action in the same struct
+## Switch actions and etc
+Future actions probably need their own struct, avoiding this logic right now
+Speed should be stable, but I'll do testing
+Speed-tie will be outside the battle state, no way around it
 
-I need to figure out future actions - ability queuing needs to also be in the action queue, and switching but pre-turn switching is different priority
+Switch in means no action at super priority (including no mega/etc)
+thinking about trainer choice later
 
-Ignore the speed-tie but it will be outside the BattleState
+I need to choose teams & leads, preferably at the same time...
+My idea of trainer choice is to give BC all the possible options (like an action)- 
 
-For the Speed checks, the queue must maintain speed but also immediate effects
-Im thinking of using 2 queues instead
-action queue - [speed(reference?), battleAction]
-immediate queue [battleAction]
+Select Team (front_team), first 2 trigger the 
 
-immediate gets consumed first always, so example Tailwind updates queue but doesn't change 
+Switch(Target BattlePosition, possible team indexes)
+Move(Source poke, moves, targets on field*)
 
-Lets focus, start of battle
-All pokemon are swapped in, on_enter/items activate
-Choose moves, execute moves, execute intermediate actions
-End of turn actions (including weather, etc)
+The brain (intelligent trainer choicer) needs to know about the best simulation (considering the entire team), lets slot that in later, i just need 4
+
+Think of starting a battle as "choose list of 4" and generating 4 send_out there. So like a choice for 4 pokemon
+Team choice can take external params, so thats fine.
+
 ---
-Switch is an action during the move phase
-End of turn can trigger a switch action, which then happens in the start phase again
 
-I'm trying to work if turn 1 of a battle is special or not, technically its the same as all 4 pokemon switching in (from nothing) at once correct?
-yeah thats fine
-
-I need the speed pinned to the struct and updated & sorted correctly- actually I need to pin the ActivePokemon so if it dies, changes speed order, I can make updates.
-Ok so it just needs more thought, if I attach the pokemon and pull the speed during a sort, that will be fine.
-
-For speed ties, I need to make a universe (on the speed tie) where each action has a different order, but ONLY when the speed tie actually matters- basically on sim_action i have to return both universes with swapped actions, or sim one and sim the other, returning both universes (and then confirm i dont need to swap after)
-actually peek_action (currently I manually pop from front of queue) can return multiple, and from there I'll make multiple universes and sim both?
+## TrainedPokemon vs Active vs Inactive
+TrainedPokemon needs all its stats.
+Active needs to change:
+    * Abilities
+    - Items
+    - Moves? (Copycat)
+    * Stats* (can be swapped or overridden?)
+    
 
 ## Delay/Post moves
 How to delay/ make things go to the next turn?

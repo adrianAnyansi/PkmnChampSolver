@@ -56,8 +56,8 @@ fn test_move_accuracy_sim() {
     let mut bs = BattleState::simple(ttar_pkmn, ven_pkmn);
     let hydro_pump = get_move(PokemonMoveName::Hydro_Pump);
     BattleState::queue_move(&mut bs.action_queue,
-        BattlePosition::F1, &hydro_pump,
-        vec![BattlePosition::B1]);
+        FieldPosition::F1, &hydro_pump,
+        vec![FieldPosition::B1]);
 
     let mut root_bc = BattleContainer::simple(bs, PkmnRational::ONE());
     root_bc.sim_next_action();
@@ -76,14 +76,14 @@ fn test_move_accuracy_sim() {
     let miss_bc = root_bc.battle_ctns.get_mut(0).unwrap();
     let miss_bs = miss_bc.battle_state.as_mut().unwrap();
     let charizard_idx = miss_bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Charizard));
-    miss_bs.send_out(BattlePosition::F2, charizard_idx);
+    miss_bs.exec_send_out(FieldPosition::F2, charizard_idx);
     let rotom_idx = miss_bs.b_team.add_poke(ActivePokemon::quick(PokemonName::Rotom_Wash));
-    miss_bs.send_out(BattlePosition::B2, rotom_idx);
+    miss_bs.exec_send_out(FieldPosition::B2, rotom_idx);
 
     let heat_wave = get_move(Heat_Wave);
     BattleState::queue_move(&mut miss_bs.action_queue,
-        BattlePosition::F2, &heat_wave,
-        vec![BattlePosition::B1, BattlePosition::B2]);
+        FieldPosition::F2, &heat_wave,
+        vec![FieldPosition::B1, FieldPosition::B2]);
 
     miss_bc.sim_next_action();
 
@@ -96,9 +96,9 @@ fn test_send_out_to_b2_places_pokemon_in_right_slot() {
     let mut bs = BattleState::new();
     let team_idx = bs.b_team.add_poke(ActivePokemon::quick(PokemonName::Charizard));
 
-    bs.send_out(BattlePosition::B2, team_idx);
+    bs.exec_send_out(FieldPosition::B2, team_idx);
 
-    let active_poke = bs.get_active(BattlePosition::B2)
+    let active_poke = bs.get_active(FieldPosition::B2)
         .expect("B2 should contain the sent-out pokemon");
     assert_eq!(active_poke.trained_pokemon.pokemon.name, PokemonName::Charizard);
     assert_eq!(bs.b_poke2, Some(team_idx));
@@ -109,13 +109,13 @@ fn test_return_poke_clears_confusion_from_f2() {
     let mut bs = BattleState::new();
     let team_idx = bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Garchomp));
 
-    bs.send_out(BattlePosition::F2, team_idx);
-    bs.get_active_mut(BattlePosition::F2)
+    bs.exec_send_out(FieldPosition::F2, team_idx);
+    bs.get_active_mut(FieldPosition::F2)
         .unwrap()
         .battle_status
         .set_flag(PokemonBattleState::CONFUSED);
 
-    bs.return_poke(BattlePosition::F2);
+    bs.return_poke(FieldPosition::F2);
 
     assert_eq!(bs.f_poke2, None);
     let returned_poke = bs.f_team.get(team_idx).unwrap();
@@ -137,7 +137,7 @@ fn test_status_effect_sim() {
     let bs = root_bc.battle_state.as_mut().unwrap();
 
     let status_action = StatusAction {
-        targets: vec![BattlePosition::F1],
+        targets: vec![FieldPosition::F1],
         status: PokemonStatus::BURNED,
         accuracy: PkmnRational::ONE(),
     };
@@ -151,7 +151,7 @@ fn test_status_effect_sim() {
     let new_bs = root_bc.battle_state.as_ref().unwrap();
 
     assert_eq!(new_bs.action_queue.len(), 0);
-    assert_eq!(new_bs.get_active(BattlePosition::F1).unwrap().status, PokemonStatus::BURNED,
+    assert_eq!(new_bs.get_active(FieldPosition::F1).unwrap().status, PokemonStatus::BURNED,
         "Pokemon F1 should be burned");
 }
 
@@ -164,7 +164,7 @@ fn test_stat_modifier_sim() {
         vec![(PokemonStatName::ATTACK, PokemonStatModifier::MINUS_5)]
     );
     bs.action_queue.push_back(BattleAction::PctActions(
-        BattlePctAction::Stat(stat_set), [Some(BattlePosition::F1), None, None, None], 
+        BattlePctAction::Stat(stat_set), [Some(FieldPosition::F1), None, None, None], 
         PkmnRational::ONE()
     ));
 
@@ -176,7 +176,7 @@ fn test_stat_modifier_sim() {
 
     assert_eq!(root_bc.battle_ctns.len(), 0);
     assert_eq!(new_bs.action_queue.len(), 0);
-    assert_eq!(new_bs.get_active_mut(BattlePosition::F1).unwrap().get_active_stat_boost(ATTACK).clone(),
+    assert_eq!(new_bs.get_active_mut(FieldPosition::F1).unwrap().get_active_stat_boost(ATTACK).clone(),
         PokemonStatModifier::MINUS_5);
 }
 
@@ -189,10 +189,10 @@ fn test_multi_stat_modifier_sim() {
         vec![(PokemonStatName::ATTACK, PokemonStatModifier::MINUS_5)]
     );
     bs.action_queue.push_back(BattleAction::PctActions(
-        BattlePctAction::Stat(stat_set), [Some(BattlePosition::F1), None, None, None], PkmnRational::HALF()
+        BattlePctAction::Stat(stat_set), [Some(FieldPosition::F1), None, None, None], PkmnRational::HALF()
     ));
     bs.action_queue.push_back(BattleAction::PctActions(
-        BattlePctAction::Stat(stat_set), [Some(BattlePosition::B1), None, None, None], PkmnRational::HALF()
+        BattlePctAction::Stat(stat_set), [Some(FieldPosition::B1), None, None, None], PkmnRational::HALF()
     ));
 
     assert_eq!(bs.action_queue.len(), 2);
@@ -209,23 +209,23 @@ fn test_multi_stat_modifier_sim() {
     // currently its P,F -> PP, PF, FP, FF
     let no_bs = root_bc.battle_ctns[1].battle_ctns[1].battle_state.as_mut().unwrap();
     assert_eq!(no_bs.action_queue.len(), 0);
-    assert_eq!(no_bs.get_active_mut(BattlePosition::F1).unwrap().get_active_stat_boost(ATTACK).clone(),
+    assert_eq!(no_bs.get_active_mut(FieldPosition::F1).unwrap().get_active_stat_boost(ATTACK).clone(),
         PokemonStatModifier::ZERO, "Effect missed, Attack unchanged");
-    assert_eq!(no_bs.get_active_mut(BattlePosition::B1).unwrap().get_active_stat_boost(ATTACK).clone(),
+    assert_eq!(no_bs.get_active_mut(FieldPosition::B1).unwrap().get_active_stat_boost(ATTACK).clone(),
         PokemonStatModifier::ZERO, "Effect missed, Attack unchanged");
 
     let one_bs = root_bc.battle_ctns[0].battle_ctns[1].battle_state.as_mut().unwrap();
     assert_eq!(one_bs.action_queue.len(), 0);
-    assert_eq!(one_bs.get_active_mut(BattlePosition::F1).unwrap().get_active_stat_boost(ATTACK).clone(),
+    assert_eq!(one_bs.get_active_mut(FieldPosition::F1).unwrap().get_active_stat_boost(ATTACK).clone(),
         PokemonStatModifier::MINUS_5, "Effect hit, Attack lowered");
-    assert_eq!(one_bs.get_active_mut(BattlePosition::B1).unwrap().get_active_stat_boost(ATTACK).clone(),
+    assert_eq!(one_bs.get_active_mut(FieldPosition::B1).unwrap().get_active_stat_boost(ATTACK).clone(),
         PokemonStatModifier::ZERO, "Effect missed, Attack unchanged");
     
     let both_bs = root_bc.battle_ctns[0].battle_ctns[0].battle_state.as_mut().unwrap();
     assert_eq!(both_bs.action_queue.len(), 0);
-    assert_eq!(both_bs.get_active_mut(BattlePosition::F1).unwrap().get_active_stat_boost(ATTACK).clone(),
+    assert_eq!(both_bs.get_active_mut(FieldPosition::F1).unwrap().get_active_stat_boost(ATTACK).clone(),
         PokemonStatModifier::MINUS_5);
-    assert_eq!(both_bs.get_active_mut(BattlePosition::B1).unwrap().get_active_stat_boost(ATTACK).clone(),
+    assert_eq!(both_bs.get_active_mut(FieldPosition::B1).unwrap().get_active_stat_boost(ATTACK).clone(),
         PokemonStatModifier::MINUS_5);
 }
 
@@ -236,7 +236,7 @@ fn test_pct_action_flinch() {
 
     bs.action_queue.push_back(BattleAction::PctAction(
         BattlePctAction::AddFlag(PokemonBattleState::FLINCHING, true),
-        BattlePosition::F1,
+        FieldPosition::F1,
         PkmnRational::ONE(),
     ));
 
@@ -245,7 +245,7 @@ fn test_pct_action_flinch() {
     assert_eq!(root_bc.battle_ctns.len(), 0);
     let new_bs = root_bc.battle_state.as_ref().unwrap();
     assert_eq!(new_bs.action_queue.len(), 0);
-    assert!(new_bs.get_active(BattlePosition::F1).unwrap().battle_status
+    assert!(new_bs.get_active(FieldPosition::F1).unwrap().battle_status
         .has_flag(PokemonBattleState::FLINCHING));
 }
 
@@ -259,28 +259,28 @@ fn test_rage_powder_redirects_ally_targeted_move() {
     let f2_idx = bs.f_team.add_poke(ActivePokemon::quick(Garchomp));
     let b1_idx = bs.b_team.add_poke(ActivePokemon::quick(Kingambit));
 
-    bs.send_out(BattlePosition::F1, f1_idx);
-    bs.send_out(BattlePosition::F2, f2_idx);
-    bs.send_out(BattlePosition::B1, b1_idx);
+    bs.exec_send_out(FieldPosition::F1, f1_idx);
+    bs.exec_send_out(FieldPosition::F2, f2_idx);
+    bs.exec_send_out(FieldPosition::B1, b1_idx);
 
     let mut root_bc = BattleContainer::simple(bs, PkmnRational::ONE());
 
     let rage_powder = get_move(PokemonMoveName::Rage_Powder);
     BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::F1, &rage_powder, vec![BattlePosition::F1]);
+        FieldPosition::F1, &rage_powder, vec![FieldPosition::F1]);
 
     root_bc.sim_next_action(); // resolve move, queue the CENTER_OF_ATTENTION flag effect
     root_bc.sim_next_action(); // apply the flag effect
 
     let bs_after_rage_powder = root_bc.battle_state.as_ref().unwrap();
-    assert!(bs_after_rage_powder.get_active(BattlePosition::F1).unwrap().battle_status
+    assert!(bs_after_rage_powder.get_active(FieldPosition::F1).unwrap().battle_status
         .has_flag(PokemonBattleState::CENTER_OF_ATTENTION),
         "F1 should be the center of attention after using Rage Powder");
 
     // B1 targets its own ally (B2, which is empty) with Sleep Powder
     let sleep_powder = get_move(PokemonMoveName::Sleep_Powder);
     BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::B1, &sleep_powder, vec![BattlePosition::B1.get_ally()]);
+        FieldPosition::B1, &sleep_powder, vec![FieldPosition::B1.get_ally()]);
 
     root_bc.sim_next_action(); // resolve move: redirect to F1 and branch on accuracy
 
@@ -293,9 +293,9 @@ fn test_rage_powder_redirects_ally_targeted_move() {
     hit_bc.sim_next_action(); // apply the redirected sleep status effect
 
     let hit_bs = hit_bc.battle_state.as_ref().unwrap();
-    assert_eq!(hit_bs.get_active(BattlePosition::F1).unwrap().status, PokemonStatus::SLEEP,
+    assert_eq!(hit_bs.get_active(FieldPosition::F1).unwrap().status, PokemonStatus::SLEEP,
         "Sleep Powder should be redirected onto the center-of-attention Pokemon (F1)");
-    assert_eq!(hit_bs.get_active(BattlePosition::B1).unwrap().status, PokemonStatus::NONE,
+    assert_eq!(hit_bs.get_active(FieldPosition::B1).unwrap().status, PokemonStatus::NONE,
         "Sleep Powder's original ally target should be unaffected");
 }
 
@@ -307,7 +307,7 @@ fn test_wide_guard_blocks_multi_target_move_but_not_single_target() {
 
     let wide_guard = get_move(PokemonMoveName::Wide_Guard);
     BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::F1, &wide_guard, vec![BattlePosition::F1, BattlePosition::F2]);
+        FieldPosition::F1, &wide_guard, vec![FieldPosition::F1, FieldPosition::F2]);
 
     root_bc.sim_next_action(); // resolve move, queue the WIDE_GUARD field effect
     root_bc.sim_next_action(); // apply the field effect
@@ -319,16 +319,16 @@ fn test_wide_guard_blocks_multi_target_move_but_not_single_target() {
 
     // Opponent uses Heat Wave, a multi-target move, which should be blocked
     let heat_wave = get_move(Heat_Wave);
-    let starting_hp = bs_after_wide_guard.get_active(BattlePosition::F1).unwrap().current_hp;
+    let starting_hp = bs_after_wide_guard.get_active(FieldPosition::F1).unwrap().current_hp;
     BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::B1, &heat_wave, vec![BattlePosition::F1]);
+        FieldPosition::B1, &heat_wave, vec![FieldPosition::F1]);
 
     root_bc.sim_next_action();
 
     assert!(root_bc.message.contains("blocked by Wide Guard"),
         "Heat Wave should be reported as blocked by Wide Guard");
     let bs_after_heat_wave = root_bc.battle_state.as_ref().unwrap();
-    assert_eq!(bs_after_heat_wave.get_active(BattlePosition::F1).unwrap().current_hp, starting_hp,
+    assert_eq!(bs_after_heat_wave.get_active(FieldPosition::F1).unwrap().current_hp, starting_hp,
         "Heat Wave should deal no damage while blocked by Wide Guard");
     assert!(bs_after_heat_wave.action_queue.is_empty(),
         "Blocked Heat Wave should not queue any further actions like Damage");
@@ -336,13 +336,13 @@ fn test_wide_guard_blocks_multi_target_move_but_not_single_target() {
     // Opponent uses Dragon Claw, a single-target move, which should not be blocked
     let dragon_claw = get_move(PokemonMoveName::Dragon_Claw);
     BattleState::queue_move(&mut root_bc.battle_state.as_mut().unwrap().action_queue,
-        BattlePosition::B1, &dragon_claw, vec![BattlePosition::F1]);
+        FieldPosition::B1, &dragon_claw, vec![FieldPosition::F1]);
 
     root_bc.sim_next_action();
 
     let bs_after_dragon_claw = root_bc.battle_state.as_ref().unwrap();
     assert!(bs_after_dragon_claw.action_queue.iter().any(|action|
-        matches!(action, BattleAction::Damage(dmg_effect) if dmg_effect.target == BattlePosition::F1)),
+        matches!(action, BattleAction::Damage(dmg_effect) if dmg_effect.target == FieldPosition::F1)),
         "Dragon Claw should queue a Damage effect since Wide Guard doesn't block single-target moves");
 }
 
@@ -354,23 +354,20 @@ fn test_sort_speed_queue_orders_faster_pokemon_first() {
     let mut root_bc = dummy_bc();
     let bs = root_bc.battle_state.as_mut().unwrap();
 
-    // act_poke borrows can't come from bs itself (self-referential), so use separate pokemon
-    let slow_poke: &'static ActivePokemon<'static, 'static> =
-        Box::leak(Box::new(ActivePokemon::quick(PokemonName::Tyranitar)));
-    let fast_poke: &'static ActivePokemon<'static, 'static> =
-        Box::leak(Box::new(ActivePokemon::quick(PokemonName::Venusaur)));
+    let slow_idx = bs.get_active_team_idx(FieldPosition::F1).unwrap();
+    let fast_idx = bs.get_active_team_idx(FieldPosition::B1).unwrap();
     let dragon_claw: &'static PokemonMove = Box::leak(Box::new(get_move(PokemonMoveName::Dragon_Claw)));
 
-    assert!(bs.get_active_pokemon_speed(slow_poke) < bs.get_active_pokemon_speed(fast_poke));
+    assert!(bs.get_active_pokemon_speed(slow_idx) < bs.get_active_pokemon_speed(fast_idx));
 
     // Slower pokemon is queued first
-    for (source, act_poke, target) in [
-        (BattlePosition::F1, slow_poke, BattlePosition::B1),
-        (BattlePosition::B1, fast_poke, BattlePosition::F1),
+    for (source, team_index, target) in [
+        (FieldPosition::F1, slow_idx, FieldPosition::B1),
+        (FieldPosition::B1, fast_idx, FieldPosition::F1),
     ] {
         bs.speed_queue.push_back(SpeedBattleAction {
             priority: get_move_priority(dragon_claw),
-            act_poke,
+            team_index,
             battle_action: BattleAction::Move(MoveAction {
                 source, targets: vec![target], pkm_move: dragon_claw,
             }),
@@ -384,6 +381,37 @@ fn test_sort_speed_queue_orders_faster_pokemon_first() {
     let Some(BattleAction::Move(second)) = bs.speed_queue.pop_front().map(|sa| sa.battle_action)
         else { panic!("expected a move action") };
 
-    assert_eq!(first.source, BattlePosition::B1, "faster Venusaur should move first");
-    assert_eq!(second.source, BattlePosition::F1, "slower Tyranitar should move second");
+    assert_eq!(first.source, FieldPosition::B1, "faster Venusaur should move first");
+    assert_eq!(second.source, FieldPosition::F1, "slower Tyranitar should move second");
+}
+
+#[test]
+/// Back Pokemon with Intimidate should queue an Attack drop sourced from B1 that targets the front Pokemon
+fn test_exec_set_team_intimidate_queued_in_speed_queue() {
+    use crate::pokemon::abilities::{make_ability, PokemonAbility, PokemonAbilityName};
+    use crate::pokemon::poke_stat::PokemonNature;
+
+    let nothing: &'static PokemonAbility<'static> =
+        Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
+    let intimidate: &'static PokemonAbility<'static> =
+        Box::leak(Box::new(make_ability(PokemonAbilityName::Intimidate)));
+    let front: &'static TrainedPokemon<'static, 'static> = Box::leak(Box::new(
+        TrainedPokemon::new(get_pkmn(PokemonName::Tyranitar), nothing, PokemonNature::Quirky, None)));
+    let back: &'static TrainedPokemon<'static, 'static> = Box::leak(Box::new(
+        TrainedPokemon::new(get_pkmn(Charizard), intimidate, PokemonNature::Quirky, None)));
+
+    let mut bs = BattleState::new();
+    bs.exec_set_team(BattleTeamSide::FRONT, &vec![front]);
+    bs.exec_set_team(BattleTeamSide::BACK, &vec![back]);
+
+    assert_eq!(bs.speed_queue.len(), 2, "Intimidate queued for both opponents");
+    let queued = bs.speed_queue.front().unwrap();
+
+    assert!(queued.team_index.team_side == BattleTeamSide::BACK);
+    assert_eq!(queued.team_index.index, 0);
+
+    let BattleAction::PctActions(BattlePctAction::Stat(_), targets, _) = &queued.battle_action
+        else { panic!("expected a stat PctActions from Intimidate") };
+    let targets: Vec<FieldPosition> = targets.iter().flatten().copied().collect();
+    assert_eq!(targets, vec![FieldPosition::F1], "Intimidate should target the opposing front Pokemon");
 }
