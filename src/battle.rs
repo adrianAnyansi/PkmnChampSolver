@@ -18,6 +18,8 @@ mod ability_test;
 
 
 
+use strum_macros::Display;
+
 use crate::battle;
 use crate::battle::DamageAfterEffect::Drain;
 use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, TrainedPokemon, VolatileEnums};
@@ -84,8 +86,8 @@ pub enum BattleAction<'battle> {
     Faint(FieldPosition),
     /// Pokemon is being sent back into team
     Return(FieldPosition),
-    /// Pokemon is coming in
-    SendOut(FieldPosition, u8), // TODO: Index should be smaller
+    /// Pokemon entering the field
+    SendOut(FieldPosition, usize),
     /// Team choice, first 2* pokemon will be sent out. BattlePosition is for the team
     ChooseTeam(FieldPosition, u8),
 
@@ -140,7 +142,7 @@ pub enum BattlePctAction {
     AddField(PokemonFieldState, bool)
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BattleTeamSide {
     FRONT,
     BACK
@@ -178,8 +180,8 @@ impl FieldPosition {
     pub fn get_team(self) -> BattleTeamSide {
         use FieldPosition::*;
         match self {
-            B1 |B2 => BattleTeamSide::BACK,
-            F1 |F2 => BattleTeamSide::FRONT,
+            B1 | B2 => BattleTeamSide::BACK,
+            F1 | F2 => BattleTeamSide::FRONT,
         }
     }
 
@@ -225,7 +227,9 @@ impl FieldPosition {
 pub enum PriorityTier {
     SWITCH = 9,
     MEGA = 8,
-    // ABILITY_ACTIVATE = 7,
+    /// Any pre-turn priority
+    PRE_TURN = 6,
+    // highest built in priority is +5 in champions
     PRIORITY_5 = 5,
 }
 
@@ -375,12 +379,12 @@ pub struct BattleState<'battle, 'simulation: 'battle> {
     pub b_team: ActiveTeam<'battle, 'simulation>,
 
     /// front face pokemon, left
-    f_poke1: Option<usize>,
-    f_poke2: Option<usize>,
+    f_poke_idx1: Option<usize>,
+    f_poke_idx2: Option<usize>,
 
     /// Back face pokemon, left
-    b_poke1: Option<usize>,
-    b_poke2: Option<usize>,
+    b_poke_idx1: Option<usize>,
+    b_poke_idx2: Option<usize>,
 
     /// Current Weather
     pub weather: BattleWeatherState,
@@ -421,10 +425,10 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             f_team: ActiveTeam::empty(),
             b_team: ActiveTeam::empty(),
 
-            f_poke1: None,
-            f_poke2: None,
-            b_poke1: None,
-            b_poke2: None,
+            f_poke_idx1: None,
+            f_poke_idx2: None,
+            b_poke_idx1: None,
+            b_poke_idx2: None,
 
             weather: BattleWeatherState::NONE,
             terrain: BattleTerrain::NONE,
@@ -449,8 +453,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             let f_idx = bs.f_team.add_poke(f_poke);
             let b_idx = bs.b_team.add_poke(b_poke);
 
-            bs.exec_send_out(FieldPosition::F1, f_idx);
-            bs.exec_send_out(FieldPosition::B1, b_idx);
+            bs.exec_send_out(FieldPosition::F1, f_idx, Some(PriorityTier::PRE_TURN as i8));
+            bs.exec_send_out(FieldPosition::B1, b_idx, Some(PriorityTier::PRE_TURN as i8));
 
             bs
     }
@@ -460,10 +464,10 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     fn get_active_idx_mut(&mut self, position: FieldPosition) -> &mut Option<usize> {
         match position {
-            FieldPosition::F1 => &mut self.f_poke1,
-            FieldPosition::F2 => &mut self.f_poke2,
-            FieldPosition::B1 => &mut self.b_poke1,
-            FieldPosition::B2 => &mut self.b_poke2,
+            FieldPosition::F1 => &mut self.f_poke_idx1,
+            FieldPosition::F2 => &mut self.f_poke_idx2,
+            FieldPosition::B1 => &mut self.b_poke_idx1,
+            FieldPosition::B2 => &mut self.b_poke_idx2,
         }
     }
 
@@ -475,10 +479,10 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         }
 
         let Some(index) = (match position {
-            FieldPosition::F1 => self.f_poke1,
-            FieldPosition::F2 => self.f_poke2,
-            FieldPosition::B1 => self.b_poke1,
-            FieldPosition::B2 => self.b_poke2,
+            FieldPosition::F1 => self.f_poke_idx1,
+            FieldPosition::F2 => self.f_poke_idx2,
+            FieldPosition::B1 => self.b_poke_idx1,
+            FieldPosition::B2 => self.b_poke_idx2,
         }) else {
             return None
         };
@@ -486,7 +490,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         Some(TeamIndex { team_side, index })
     }
 
-    pub fn exec_send_out(&mut self, position: FieldPosition, team_index: usize) {
+    /// Send out pokemon from ActiveTeam to field. Trigger abilities/items/effects
+    pub fn exec_send_out(&mut self, position: FieldPosition, 
+        team_index: usize, int_priority: Option<i8>) {
 
         // TODO: Change from InActivePokemon to ActivePokemon
 
@@ -502,7 +508,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             entered_poke.actions_taken = 0; // Reset actions taken
 
         } else {
-            panic!("MissingNo Pokemon was sent out!")
+            panic!("Missing(No) Pokemon was sent out!")
         }
 
         let true_index = TeamIndex { team_side: position.get_team(), index: team_index };
@@ -515,8 +521,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             None => Vec::new(),
         };
 
+        let priority = int_priority.unwrap_or(0);
         // TODO: Trigger/Queue items with ON_ENTER flags
-
+        // TODO: target -> position -> battle action sucks, do better T
         for eff in effects {
             let target_positions = match eff {
                 MoveEffect::Stat(_, t, _) | MoveEffect::Status(_, t, _)
@@ -527,14 +534,14 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             for target_pos in target_positions {
                 let ba = BattleState::convert_effect_to_baction(&eff, target_pos);
                 // TODO: Ability priority depends on when switch in occurred
-                self.queue_action_with_speed(true_index, ba, Some(0));
+                self.queue_action_with_speed(true_index, ba, Some(priority));
             }
         }
 
         
     }
 
-    pub fn return_poke(&mut self, position: FieldPosition) {
+    pub fn exec_return_poke(&mut self, position: FieldPosition) {
         // Trigger ON_EXIT abilities/items/etc
         
         // Clear battle_status*
@@ -711,24 +718,34 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     fn get_active_mut<'a>(&'a mut self, position: FieldPosition) -> Option<&'a mut ActivePokemon<'battle, 'simulation>> {
         match position {
-            FieldPosition::F1 => self.f_team.get_mut(self.f_poke1.unwrap_or(100) as usize),
-            FieldPosition::F2 => self.f_team.get_mut(self.f_poke2.unwrap_or(100) as usize),
-            FieldPosition::B1 => self.b_team.get_mut(self.b_poke1.unwrap_or(100) as usize),
-            FieldPosition::B2 => self.b_team.get_mut(self.b_poke2.unwrap_or(100) as usize),
+            FieldPosition::F1 => self.f_team.get_mut(self.f_poke_idx1.unwrap_or(100) as usize),
+            FieldPosition::F2 => self.f_team.get_mut(self.f_poke_idx2.unwrap_or(100) as usize),
+            FieldPosition::B1 => self.b_team.get_mut(self.b_poke_idx1.unwrap_or(100) as usize),
+            FieldPosition::B2 => self.b_team.get_mut(self.b_poke_idx2.unwrap_or(100) as usize),
         }
     }
 
     pub fn get_active<'a>(&'a self, position: FieldPosition) -> Option<&'a ActivePokemon<'battle, 'simulation>> {
         match position {
-            FieldPosition::F1 => self.f_team.get(self.f_poke1.unwrap_or(100) as usize),
-            FieldPosition::F2 => self.f_team.get(self.f_poke2.unwrap_or(100) as usize),
-            FieldPosition::B1 => self.b_team.get(self.b_poke1.unwrap_or(100) as usize),
-            FieldPosition::B2 => self.b_team.get(self.b_poke2.unwrap_or(100) as usize),
+            FieldPosition::F1 => self.f_team.get(self.f_poke_idx1.unwrap_or(100) as usize),
+            FieldPosition::F2 => self.f_team.get(self.f_poke_idx2.unwrap_or(100) as usize),
+            FieldPosition::B1 => self.b_team.get(self.b_poke_idx1.unwrap_or(100) as usize),
+            FieldPosition::B2 => self.b_team.get(self.b_poke_idx2.unwrap_or(100) as usize),
         }
     }
 
+    
+    pub fn get_team_by_side(&self, team_side:BattleTeamSide) -> &ActiveTeam<'battle, 'simulation> {
+        match team_side {
+            BattleTeamSide::BACK => &self.b_team,
+            BattleTeamSide::FRONT => &self.f_team,
+        }
+    }
+
+    // ========================================================================
     // Can perform checks
-    // Check if stat is entirely blocked, if so quit simulation
+
+    /// Check if stat is entirely blocked, if so quit simulation
     fn can_perform_stat(&self,
         stat_modf:&StatModf, target_pos:FieldPosition) -> bool
     {
@@ -1729,7 +1746,19 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             BattleAction::Protect(move_name, position, accuracy ) => {
                 // Check the protect_counter in the function
                 return self.sim_protect(move_name, position, accuracy);
-            }
+            },
+
+            BattleAction::SendOut(position, index) => {
+                self.exec_send_out(position, index, None);
+                // TODO: Better logging
+                vec![BattleContainer::one(self.clone(), Some("Sent out pokemon".to_string()))]
+            },
+            BattleAction::Return(position) => {
+                self.exec_return_poke(position);
+                let team_side = position.get_team();
+                vec![BattleContainer::one(self.clone(), Some(format!("Returned pokemon index {position} for side {team_side:?}")))]
+            },
+
             BattleAction::PctAction(BattlePctAction::AddFlag(flag, _set_value), position , accuracy ) => {
                 // NOTE: Should be used for no miss cases
                 let vol_status = flag; // TODO: Check volatile subset status
@@ -1808,8 +1837,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         let max_fields = MAX_FIELD.min(team_len);
         
         for team_index in 0..max_fields {
-            let bat_pos = field_pos[team_index];
-            self.exec_send_out(bat_pos, team_index);
+            self.exec_send_out(field_pos[team_index], 
+                team_index, Some(PriorityTier::PRE_TURN as i8));
         }
 
     }
@@ -1842,6 +1871,17 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         self.turn_complete = true;
         self
     }
+
+    /// Check if team
+    pub fn has_team_lost(&self, team_side:BattleTeamSide) -> bool {
+        let team = self.get_team_by_side(team_side);
+        let num_alive = team.get_alive_indexes();
+        return num_alive.len() > 0
+    }
+
+
+    // ====================================================
+    // Convert & internal utility
 
     /// Convert a MoveEffect to an Action with Damage/Status/etc
     /// Targets must be determined before calling this

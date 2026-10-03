@@ -372,6 +372,19 @@ impl<'battle, 'simulation: 'battle> ActiveTeam<'battle, 'simulation> {
         }
         self.pokemon[index].as_mut()
     }
+
+    /// Return all targets that are alive
+    pub fn get_alive_indexes(&self) -> Vec<usize> {
+        let mut ret_val = vec![];
+        for team_index in 0..6 {
+            if let Some(act_poke) = self.get(team_index) {
+                if act_poke.current_hp > 0 {
+                    ret_val.push(team_index);
+                }
+            }
+        }
+        ret_val
+    }
 }
 
 

@@ -76,9 +76,9 @@ fn test_move_accuracy_sim() {
     let miss_bc = root_bc.battle_ctns.get_mut(0).unwrap();
     let miss_bs = miss_bc.battle_state.as_mut().unwrap();
     let charizard_idx = miss_bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Charizard));
-    miss_bs.exec_send_out(FieldPosition::F2, charizard_idx);
+    miss_bs.exec_send_out(FieldPosition::F2, charizard_idx, None);
     let rotom_idx = miss_bs.b_team.add_poke(ActivePokemon::quick(PokemonName::Rotom_Wash));
-    miss_bs.exec_send_out(FieldPosition::B2, rotom_idx);
+    miss_bs.exec_send_out(FieldPosition::B2, rotom_idx, None);
 
     let heat_wave = get_move(Heat_Wave);
     BattleState::queue_move(&mut miss_bs.action_queue,
@@ -96,12 +96,12 @@ fn test_send_out_to_b2_places_pokemon_in_right_slot() {
     let mut bs = BattleState::new();
     let team_idx = bs.b_team.add_poke(ActivePokemon::quick(PokemonName::Charizard));
 
-    bs.exec_send_out(FieldPosition::B2, team_idx);
+    bs.exec_send_out(FieldPosition::B2, team_idx, None);
 
     let active_poke = bs.get_active(FieldPosition::B2)
         .expect("B2 should contain the sent-out pokemon");
     assert_eq!(active_poke.trained_pokemon.pokemon.name, PokemonName::Charizard);
-    assert_eq!(bs.b_poke2, Some(team_idx));
+    assert_eq!(bs.b_poke_idx2, Some(team_idx));
 }
 
 #[test]
@@ -109,18 +109,46 @@ fn test_return_poke_clears_confusion_from_f2() {
     let mut bs = BattleState::new();
     let team_idx = bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Garchomp));
 
-    bs.exec_send_out(FieldPosition::F2, team_idx);
+    bs.exec_send_out(FieldPosition::F2, team_idx, None);
     bs.get_active_mut(FieldPosition::F2)
         .unwrap()
         .battle_status
         .set_flag(PokemonBattleState::CONFUSED);
 
-    bs.return_poke(FieldPosition::F2);
+    bs.exec_return_poke(FieldPosition::F2);
 
-    assert_eq!(bs.f_poke2, None);
+    assert_eq!(bs.f_poke_idx2, None);
     let returned_poke = bs.f_team.get(team_idx).unwrap();
     assert!(!returned_poke.battle_status.has_flag(PokemonBattleState::CONFUSED),
         "battle_status should be cleared when the Pokémon returns to the team");
+}
+
+#[test]
+fn test_send_out_and_return_actions_update_field() {
+    let mut root_bc = dummy_bc();
+    let bs = root_bc.battle_state.as_mut().unwrap();
+    let team_idx = bs.f_team.add_poke(ActivePokemon::quick(Charizard));
+    assert!(bs.get_active(FieldPosition::F2).is_none(), "F2 should start empty");
+
+    bs.action_queue.push_back(BattleAction::SendOut(
+        FieldPosition::F2,
+        team_idx,
+    ));
+    root_bc.sim_next_action();
+
+    let bs = root_bc.battle_state.as_ref().unwrap();
+    let active = bs.get_active(FieldPosition::F2)
+        .expect("Charizard should be on the field at F2");
+    assert_eq!(active.trained_pokemon.pokemon.name, Charizard);
+    assert_eq!(bs.f_poke_idx2, Some(team_idx));
+
+    let bs = root_bc.battle_state.as_mut().unwrap();
+    bs.action_queue.push_back(BattleAction::Return(FieldPosition::F2));
+    root_bc.sim_next_action();
+
+    let bs = root_bc.battle_state.as_ref().unwrap();
+    assert!(bs.get_active(FieldPosition::F2).is_none(), "F2 should be empty after return");
+    assert_eq!(bs.f_poke_idx2, None);
 }
 
 fn dummy_bc() -> BattleContainer<'static, 'static> {
@@ -259,9 +287,9 @@ fn test_rage_powder_redirects_ally_targeted_move() {
     let f2_idx = bs.f_team.add_poke(ActivePokemon::quick(Garchomp));
     let b1_idx = bs.b_team.add_poke(ActivePokemon::quick(Kingambit));
 
-    bs.exec_send_out(FieldPosition::F1, f1_idx);
-    bs.exec_send_out(FieldPosition::F2, f2_idx);
-    bs.exec_send_out(FieldPosition::B1, b1_idx);
+    bs.exec_send_out(FieldPosition::F1, f1_idx, None);
+    bs.exec_send_out(FieldPosition::F2, f2_idx, None);
+    bs.exec_send_out(FieldPosition::B1, b1_idx, None);
 
     let mut root_bc = BattleContainer::simple(bs, PkmnRational::ONE());
 

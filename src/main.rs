@@ -44,14 +44,14 @@ fn battle_container_test() {
         AbilityLibrary.get_ability(PokemonAbilityName::Chlorophyll),
         pokemon::poke_stat::PokemonNature::Brave, None);
     let venusaur_idx = bs.f_team.add_poke(ActivePokemon::new(&venusaur_trained));
-    bs.exec_send_out(FieldPosition::F1, venusaur_idx);
+    bs.exec_send_out(FieldPosition::F1, venusaur_idx, Some(0));
     let kingambit_idx = bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Kingambit));
-    bs.exec_send_out(FieldPosition::F2, kingambit_idx);
+    bs.exec_send_out(FieldPosition::F2, kingambit_idx, Some(0));
     let garchomp_trained = TrainedPokemon::new(garchomp,
         AbilityLibrary.get_ability(PokemonAbilityName::Nothing),
         pokemon::poke_stat::PokemonNature::Brave, None);
     let garchomp_idx = bs.b_team.add_poke(ActivePokemon::new(&garchomp_trained));
-    bs.exec_send_out(FieldPosition::B1, garchomp_idx);
+    bs.exec_send_out(FieldPosition::B1, garchomp_idx, Some(0));
 
 
     println!("Created {}, {} pokemon", venusaur, garchomp);

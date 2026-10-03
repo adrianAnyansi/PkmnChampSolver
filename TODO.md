@@ -7,10 +7,9 @@ I'm strudging forward
 ## Today
 --- 
 
-Implementing the send_out phase of turn 0
-So abilities can be tied to enter/exit
+Turn 0 doesnt matter until trainer choice and turn mechanics work
 
-Then I'll do parting shot, and the logic for that
+Lets do parting shot
 
 
 ## Moves to implement
@@ -69,7 +68,7 @@ Active needs to change:
     - Items
     - Moves? (Copycat)
     * Stats* (can be swapped or overridden?)
-    
+
 
 ## Delay/Post moves
 How to delay/ make things go to the next turn?
