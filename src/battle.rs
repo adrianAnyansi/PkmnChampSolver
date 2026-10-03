@@ -806,6 +806,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         }
         
         // Field checks
+
+        // Pokemon checks
         let source_poke = self.get_active(move_action.source);
         if let Some(source_act_poke) = source_poke {
 
@@ -1234,6 +1236,10 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                     MoveEffect::General(_, battle_target, _rat) |
                     MoveEffect::AddFlag(_, battle_target , _rat )
                     => {
+                        BattleState::convert_effect_target_to_position(
+                            *battle_target, move_action.source, Some(**target_pos))
+                    },
+                    MoveEffect::ForcedReturn(battle_target) => {
                         BattleState::convert_effect_target_to_position(
                             *battle_target, move_action.source, Some(**target_pos))
                     },
@@ -1932,6 +1938,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 BattleAction::PctAction(BattlePctAction::AddField(*field_flag, true), 
                         effect_target_pos, *rat)
             },
+            MoveEffect::ForcedReturn(_position) => {
+                BattleAction::Return(effect_target_pos)
+            }
             _ => panic!("Not like this")
         }
     }

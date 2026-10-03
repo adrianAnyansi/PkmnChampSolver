@@ -13,8 +13,7 @@ Lets do parting shot
 
 
 ## Moves to implement
-Parting Shot - Return after stats
-Trick Room - Speed order stuff
+Trick Room - Speed order stuff (not doing this btw)
 Light Screen - room effect + damage calc
 Heavy Slam - Weight for base power
 Knock Off - Item mechanic
@@ -38,26 +37,9 @@ Sand Force - MoveModifier In Sandstorm, boost moves
 ## Current Thoughts
 ---
 
-## Switch actions and etc
-Future actions probably need their own struct, avoiding this logic right now
-Speed should be stable, but I'll do testing
-Speed-tie will be outside the battle state, no way around it
+What now, heavy slam mechanics? ew
+Items are possible but thats the same as ability triggers
 
-Switch in means no action at super priority (including no mega/etc)
-thinking about trainer choice later
-
-I need to choose teams & leads, preferably at the same time...
-My idea of trainer choice is to give BC all the possible options (like an action)- 
-
-Select Team (front_team), first 2 trigger the 
-
-Switch(Target BattlePosition, possible team indexes)
-Move(Source poke, moves, targets on field*)
-
-The brain (intelligent trainer choicer) needs to know about the best simulation (considering the entire team), lets slot that in later, i just need 4
-
-Think of starting a battle as "choose list of 4" and generating 4 send_out there. So like a choice for 4 pokemon
-Team choice can take external params, so thats fine.
 
 ---
 

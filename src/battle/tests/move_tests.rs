@@ -363,3 +363,38 @@ fn test_matcha_gotcha_queues_damage_then_burn_then_heals_after_damage() {
         BattleAction::Heal(heal_effect) if heal_effect.target == FieldPosition::B1
     ), "Matcha Gotcha should heal the user after dealing damage");
 }
+
+#[test]
+/// Parting Shot should lower the target's stats, then queue a Return for the user
+fn test_parting_shot_stat_drop_then_user_returns() {
+    use crate::battle::BattlePctAction;
+    use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonStatName::{ATTACK, SPECIAL_ATTACK}};
+
+    let mut root_bc = dummy_bc(); // Garchomp (F1) vs Tyranitar (B1)
+    let bs = root_bc.battle_state.as_mut().unwrap();
+    let spare_idx = bs.f_team.add_poke(ActivePokemon::quick(PokemonName::Charizard));
+
+    let parting_shot = get_move(PokemonMoveName::Parting_Shot);
+    BattleState::queue_move(&mut bs.action_queue,
+        FieldPosition::F1, &parting_shot, vec![FieldPosition::B1]);
+
+    root_bc.sim_next_action(); // resolve move, queue its hit effects
+
+    let bs = root_bc.battle_state.as_ref().unwrap();
+    assert_eq!(bs.action_queue.len(), 2, "Stat drop and return should be queued");
+    assert!(matches!(bs.action_queue[0], BattleAction::PctActions(BattlePctAction::Stat(_), _, _)),
+        "Stat application should come first");
+    assert!(matches!(bs.action_queue[1], BattleAction::Return(FieldPosition::F1)),
+        "Return of the user should be queued after the stat application");
+
+    while !root_bc.battle_state.as_ref().unwrap().action_queue.is_empty() {
+        root_bc.sim_next_action();
+    }
+
+    let bs = root_bc.battle_state.as_ref().unwrap();
+    assert!(bs.get_active(FieldPosition::F1).is_none(), "Parting Shot user should have left the field");
+    assert!(bs.f_team.get(spare_idx).is_some());
+    let mut target = bs.get_active(FieldPosition::B1).unwrap().clone();
+    assert_eq!(*target.get_active_stat_boost(ATTACK), PokemonStatModifier::MINUS_1);
+    assert_eq!(*target.get_active_stat_boost(SPECIAL_ATTACK), PokemonStatModifier::MINUS_1);
+}

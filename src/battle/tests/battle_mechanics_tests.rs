@@ -151,7 +151,7 @@ fn test_send_out_and_return_actions_update_field() {
     assert_eq!(bs.f_poke_idx2, None);
 }
 
-fn dummy_bc() -> BattleContainer<'static, 'static> {
+fn dummy_bc<'battle>() -> BattleContainer<'battle, 'static> {
     let ttar_pkmn = ActivePokemon::quick(PokemonName::Tyranitar);
     let ven_pkmn = ActivePokemon::quick(PokemonName::Venusaur);
 
@@ -379,12 +379,16 @@ fn test_wide_guard_blocks_multi_target_move_but_not_single_target() {
 #[test]
 /// dummy_bc is Tyranitar (F1, base speed 61) vs Venusaur (B1, base speed 80)
 fn test_sort_speed_queue_orders_faster_pokemon_first() {
+    // Bare move with no effects; only its priority matters for ordering.
+    // Declared before root_bc so it outlives the state that borrows it.
+    let dummy_move = PokemonMove::status(PokemonMoveName::Protect, PokemonType::NORMAL, FieldTarget::SELF);
+    let dummy_move = &dummy_move;
+
     let mut root_bc = dummy_bc();
     let bs = root_bc.battle_state.as_mut().unwrap();
 
     let slow_idx = bs.get_active_team_idx(FieldPosition::F1).unwrap();
     let fast_idx = bs.get_active_team_idx(FieldPosition::B1).unwrap();
-    let dragon_claw: &'static PokemonMove = Box::leak(Box::new(get_move(PokemonMoveName::Dragon_Claw)));
 
     assert!(bs.get_active_pokemon_speed(slow_idx) < bs.get_active_pokemon_speed(fast_idx));
 
@@ -394,10 +398,10 @@ fn test_sort_speed_queue_orders_faster_pokemon_first() {
         (FieldPosition::B1, fast_idx, FieldPosition::F1),
     ] {
         bs.speed_queue.push_back(SpeedBattleAction {
-            priority: get_move_priority(dragon_claw),
+            priority: get_move_priority(dummy_move),
             team_index,
             battle_action: BattleAction::Move(MoveAction {
-                source, targets: vec![target], pkm_move: dragon_claw,
+                source, targets: vec![target], pkm_move: dummy_move,
             }),
         });
     }

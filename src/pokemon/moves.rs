@@ -87,7 +87,9 @@ pub enum MoveEffect {
     /// Add field flag to field
     AddFieldFlag(PokemonFieldState, PkmnRational),
     /// Charge move, Source, Target
-    Charge(FieldPosition)
+    Charge(FieldTarget),
+    /// Force target to return to team
+    ForcedReturn(FieldTarget)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -241,6 +243,11 @@ impl<'simulation> PokemonMove {
     {
         // let real_rat = rat.unwrap_or(PkmnRational::ONE());
         self.hit_actions.push(MoveEffect::General(b_effect, target_pos, rat));
+        self
+    }
+ 
+    pub fn add_move_eff(mut self, move_effect:MoveEffect) -> Self {
+        self.hit_actions.push(move_effect);
         self
     }
 
@@ -691,7 +698,8 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             .stat_change(OPPONENT,
                 vec![(ATTACK, MINUS_1), (SPECIAL_ATTACK, MINUS_1)],
                 PkmnRational::ONE())
-            .add_dummy_flag("switch self"), // TODO: Add switch effect
+            .add_move_eff(MoveEffect::ForcedReturn(FieldTarget::SELF)),
+            // .add_dummy_flag("switch self"), // TODO: Add switch effect
 
         PokemonMoveName::Throat_Chop => PokemonMove::new(
             pkmn_move_name, DARK, Physical
