@@ -75,6 +75,21 @@ pub struct PokemonMove {
     pub flags: PokemonBitFlag128<PokemonMoveFlag>
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum DamageAmount {
+    /// Based on health percentage
+    HealthPct(PkmnRational),
+    /// Based on move damage
+    MoveDmgPct(PkmnRational),
+    /// Specific move: Attack stat before decreased by 1
+    StrengthSap,
+}
+
+pub enum DamageTiming {
+    RECOIL,
+    PRE_MOVE,
+}
+
 /// Describe an effect that occurs after a move/ability
 #[derive(Debug, Copy, Clone)]
 pub enum MoveEffect {
@@ -89,7 +104,11 @@ pub enum MoveEffect {
     /// Charge move, Source, Target
     Charge(FieldTarget),
     /// Force target to return to team
-    ForcedReturn(FieldTarget)
+    ForcedReturn(FieldTarget),
+    /// Heal by amount
+    Healing(FieldTarget, DamageAmount),
+    /// Damage by amount
+    Damage(FieldTarget, DamageAmount), // TODO: Add type for recoil & etc
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -726,6 +745,7 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         ).set_power(80).set_target(OPPONENT_ALL)
         .add_flag(HEAL_1_2HF)
         .status_effect(BURNED, PkmnRational::pct(20), FieldTarget::OPPONENT,)
+        .add_move_eff(MoveEffect::Healing(SELF, DamageAmount::MoveDmgPct(PkmnRational::new(1,2))))
         .add_flag(MOVE_THAW)
         .add_dummy_flag("move thaw"),
 

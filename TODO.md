@@ -4,12 +4,60 @@ Goal - all <12 pokemon, moves and abilities done
 Then a timed simulation and optimization
 I'm strudging forward
 
+## Backlog/Put aside
+Turn 0 doesnt matter until trainer choice and turn mechanics work
+
 ## Today
 --- 
 
-Turn 0 doesnt matter until trainer choice and turn mechanics work
+Been rewriting the recoil/drain mechanics right now.
+Stemmed from Hospitality and generizing the action
+Cant think of a case that drains & recoils rn
+This should also scale to things like Explosion & Belly Drum which is good.
 
-Lets do parting shot
+After Hospitality Im going to go fix the recoil/drain aspects
+
+## MoveEffect improvements
+I need to do a rewrite of MoveEffect -> BattleAction, its very irritating to write anything when I'm doing 5M cases
+
+MoveEffect -> BattleAction function with optional arguments, thats gonna be next commit though
+
+## Ability notes
+Ok lets think- for chrolophyll it can activate onEnter same as weather change. For retrieving the value & multiplier, i have the damage modifier method to use, but something like unburden needs a flag thats reset on certain values/situations.
+For example, Unburden gets a boost thats applied after base but before stat mult, but I don't want a constant check of ability speed every time- any other stat which should sit on the pokemon (like grass seed)
+
+### Heal/Recoil derailment
+For Hospitality, I have to spawn an effect but determine healing from it-
+The Damage/Heal effects were written with Move recoil in mind so they dont work well for these cases
+
+Issue is the percentage could refer to a move damage (drain), to the opponent health, etc.
+So based on move damage, based on health, or Strength Sap*/Pain Split, 
+Can target ally, self, team, opponent
+Pollen Puff, Present (prob not in Champions)
+Revive - Revival Blessing, Lunar Dance, Healing Wish*
+
+So Target, Type will be the enum (or reverse?)
+Then I'll know how to calc the damage/heal amount, and who to give it to
+Since there can be many enums for the amount, lets move that to an enum instead- but I want a pct/move/custom enum, so new enum then
+
+Since dmg_after_effect doesn't work anymore as a generic identifier, I need to add more onto this. 
+An enum can ident when it works-
+Damage - Recoil, Always, 2nd effect
+    (How to handle Future Sight/Fire Spin damage)
+
+Currently I have Move -> Damage {eff}, then after the damage hits, it can spawn objects.
+
+## Damage/Heal owner stuff
+I need a owner / source identifier thing eventually, but putting this off for now I just solving the recoil+heal change
+
+
+## Ability memory
+
+Here's the solution to stuff like Disguise, Unburden, etc
+In ActivePokemon I'll have votalite + non volatile memory
+This way the ability can store memory without needing to worry about location/per ability memory
+
+However 
 
 
 ## Moves to implement
@@ -20,9 +68,7 @@ Knock Off - Item mechanic
 
 ## Abilities to implement
 Chlorophyll - Speed mechanic with instant change
-Blaze - Move thing
 Rough Skin - OnDamage, do more damage (check source)
-Intimidate  - OnEnter, change statistics
 Flower Veil - Protect status
 Hospitality - OnEnter, give ally 1/8? healing
 Unburden - Item mechanic
@@ -39,6 +85,7 @@ Sand Force - MoveModifier In Sandstorm, boost moves
 
 What now, heavy slam mechanics? ew
 Items are possible but thats the same as ability triggers
+
 
 
 ---

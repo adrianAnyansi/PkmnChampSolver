@@ -1,6 +1,6 @@
 use crate::battle::battle_processor::BattleContainer;
 use crate::battle::data::{ActivePokemon, TrainedPokemon};
-use crate::battle::{BattleAction, FieldPosition, BattleState};
+use crate::battle::{BattleAction, BattlePctAction, BattleState, BattleTeamSide, FieldPosition};
 use crate::math::{mult_and_round, PkmnRational};
 use crate::pokemon::abilities::{make_ability, PokemonAbilityName};
 use crate::pokemon::moves::{get_move, PokemonMoveName};
@@ -94,4 +94,74 @@ fn test_blaze_boosts_second_fire_move_below_one_third_hp() {
     };
 
     assert_eq!(second_damage, mult_and_round(first_damage, 1.5));
+}
+
+
+#[test]
+/// Back Pokemon with Intimidate should queue an Attack drop sourced from B1 that targets the front Pokemon
+fn test_exec_set_team_intimidate_queued_in_speed_queue() {
+    use crate::pokemon::abilities::{make_ability, PokemonAbility, PokemonAbilityName};
+    use crate::pokemon::poke_stat::PokemonNature;
+
+    let nothing: &'static PokemonAbility<'static> =
+        Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
+    let intimidate: &'static PokemonAbility<'static> =
+        Box::leak(Box::new(make_ability(PokemonAbilityName::Intimidate)));
+    let front: &'static TrainedPokemon<'static, 'static> = Box::leak(Box::new(
+        TrainedPokemon::new(get_pkmn(PokemonName::Tyranitar), nothing, PokemonNature::Quirky, None)));
+    let back: &'static TrainedPokemon<'static, 'static> = Box::leak(Box::new(
+        TrainedPokemon::new(get_pkmn(PokemonName::Charizard), intimidate, PokemonNature::Quirky, None)));
+
+    let mut bs = BattleState::new();
+    bs.exec_set_team(BattleTeamSide::FRONT, &vec![front]);
+    bs.exec_set_team(BattleTeamSide::BACK, &vec![back]);
+
+    assert_eq!(bs.speed_queue.len(), 2, "Intimidate queued for both opponents");
+    let queued = bs.speed_queue.front().unwrap();
+
+    assert!(queued.team_index.team_side == BattleTeamSide::BACK);
+    assert_eq!(queued.team_index.index, 0);
+
+    let BattleAction::PctActions(BattlePctAction::Stat(_), targets, _) = &queued.battle_action
+        else { panic!("expected a stat PctActions from Intimidate") };
+    let targets: Vec<FieldPosition> = targets.iter().flatten().copied().collect();
+    assert_eq!(targets, vec![FieldPosition::F1], "Intimidate should target the opposing front Pokemon");
+}
+
+
+#[test]
+fn test_hospitality_heals_ally_one_eighth_on_send_out() {
+    let mut battle_state = BattleState::new();
+    let front_idx = battle_state.f_team.add_poke(ActivePokemon::quick(PokemonName::Tyranitar));
+    let back_idx = battle_state.b_team.add_poke(ActivePokemon::quick(PokemonName::Venusaur));
+    battle_state.exec_send_out(FieldPosition::F1, front_idx, None);
+    battle_state.exec_send_out(FieldPosition::B1, back_idx, None);
+
+    let b1 = battle_state.get_active_mut(FieldPosition::B1).unwrap();
+    let max_hp = b1.get_active_stat(crate::pokemon::poke_stat::PokemonStatName::HEALTH);
+    b1.current_hp = max_hp / 2;
+
+    let hospitality = Box::leak(Box::new(make_ability(PokemonAbilityName::Hospitality)));
+    let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
+        get_pkmn(PokemonName::Charizard),
+        hospitality,
+        PokemonNature::Quirky,
+        None,
+    )));
+    let hospitality_idx = battle_state
+        .b_team
+        .add_poke(ActivePokemon::new(trained_pokemon));
+    battle_state.exec_send_out(FieldPosition::B2, hospitality_idx, None);
+
+    let heal = battle_state
+        .speed_queue
+        .iter()
+        .find_map(|speed_action| match &speed_action.battle_action {
+            BattleAction::Heal(heal) => Some(*heal),
+            _ => None,
+        })
+        .expect("Hospitality should queue a healing action");
+
+    assert_eq!(heal.target, FieldPosition::B1);
+    assert_eq!(heal.calc_healing, max_hp / 8);
 }

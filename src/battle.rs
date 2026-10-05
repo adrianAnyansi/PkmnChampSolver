@@ -24,7 +24,7 @@ use crate::battle;
 use crate::battle::DamageAfterEffect::Drain;
 use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, TrainedPokemon, VolatileEnums};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
-use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_move_priority, get_weather_modify_move};
+use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, DamageAmount, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_move_priority, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
@@ -32,7 +32,6 @@ use crate::pokemon::abilities::PokemonAbilityName;
 use crate::pokemon::{self, Pokemon, moves::{BattlePreAction, FieldTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
 use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
-
 
 
 static LEVEL: i32 = 50;
@@ -292,6 +291,7 @@ pub struct HealEffect {
     pub calc_healing: i32,
     /// TODO: Re-using damage until this more details are needed
     pub heal_source: DamageSource,
+    pub owner: TeamIndex
 }
 
 /// Used to calculate recoil or healing after
@@ -524,15 +524,39 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         let priority = int_priority.unwrap_or(0);
         // TODO: Trigger/Queue items with ON_ENTER flags
         // TODO: target -> position -> battle action sucks, do better T
+        let ability_name = self.get_active(position).unwrap().trained_pokemon.ability.name;
         for eff in effects {
+            // TODO: Removing Healing case, need generic solution
+            if let MoveEffect::Healing(field_target, DamageAmount::HealthPct(hp_pct)) = &eff {
+                // Heals a percentage of the target's total HP
+                for target_pos in BattleState::convert_target_to_position(*field_target, position) {
+                    let Some(target_poke) = self.get_active(target_pos) else { continue };
+                    let total_hp = target_poke.get_active_stat(PokemonStatName::HEALTH);
+                    let heal = BattleAction::Heal(HealEffect {
+                        target: target_pos,
+                        calc_healing: (total_hp as f64 * hp_pct.float()) as i32,
+                        heal_source: DamageSource::Ability(ability_name),
+                        owner: true_index,
+                    });
+                    self.queue_action_with_speed(true_index, heal, Some(priority));
+                }
+                continue;
+            }
             let target_positions = match eff {
                 MoveEffect::Stat(_, t, _) | MoveEffect::Status(_, t, _)
-                | MoveEffect::General(_, t, _) | MoveEffect::AddFlag(_, t, _) =>
+                | MoveEffect::General(_, t, _) | MoveEffect::AddFlag(_, t, _) |
+                MoveEffect::Healing(t, _) =>
                     BattleState::convert_target_to_position(t, position),
                 _ => vec![position],
             };
             for target_pos in target_positions {
                 let ba = BattleState::convert_effect_to_baction(&eff, target_pos);
+                // if let BattleAction::Heal(mut heal_eff) = ba {
+                //     let Some(target_poke) = self.get_active(target_pos) else {continue};
+                //     // let total_hp = target_poke.get_active_stat(PokemonStatName::HEALTH);
+                //     heal_eff.calc_healing = 1 ;//total_hp as f64 * eff.pct.float() as i32;
+                //     heal_eff.heal_source = DamageSource::Ability(ability_name)
+                // }
                 // TODO: Ability priority depends on when switch in occurred
                 self.queue_action_with_speed(true_index, ba, Some(priority));
             }
@@ -839,6 +863,20 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 (DamageAfterEffect::Drain, PkmnRational::new(1, 2))
             )
         }
+        // TODO: check move flags for drain/heal
+        for hit_action in pkm_move.hit_actions.iter() {
+            match hit_action {
+                MoveEffect::Healing(_target, 
+                    DamageAmount::MoveDmgPct(pct)) => 
+                        return Some((DamageAfterEffect::Drain, *pct)),
+                MoveEffect::Damage(_target, 
+                    DamageAmount::MoveDmgPct(pct)) => 
+                        return Some((DamageAfterEffect::Recoil, *pct)),
+                _ => {}
+            }
+        }
+
+
         None
     }
 
@@ -1190,6 +1228,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
             // TODO: Calculate crit, including status and etc effects
             let mut active_move = move_action.pkm_move.clone();
+            let mut dmg_amount_if_atk: Option<i32> = None;
 
             if move_action.pkm_move.is_attack() {
                 println!("INT[{}/{}] Start damage calc for target {def_poke}",
@@ -1214,6 +1253,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                     damage_source: DamageSource::Move(move_action.pkm_move.name),
                     dmg_after_effect: (move_action.source, dmg_after_effect)
                 };
+                dmg_amount_if_atk = Some(dmg_effect.calc_damage);
                 
                 result_act_vec.push(BattleAction::Damage(dmg_effect));
             } else {
@@ -1231,28 +1271,22 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             for hit_action in &active_move.hit_actions {
 
                 let effect_target_pos = match hit_action {
-                    MoveEffect::Stat(_, battle_target, _rat) |
-                    MoveEffect::Status(_, battle_target, _rat) |
-                    MoveEffect::General(_, battle_target, _rat) |
-                    MoveEffect::AddFlag(_, battle_target , _rat )
+                    MoveEffect::Stat(_, battle_target, _) |
+                    MoveEffect::Status(_, battle_target, _) |
+                    MoveEffect::General(_, battle_target, _) |
+                    MoveEffect::AddFlag(_, battle_target , _ ) |
+                    MoveEffect::Healing(battle_target, _) |
+                    MoveEffect::ForcedReturn(battle_target) |
+                    MoveEffect::Damage(battle_target, _)
                     => {
                         BattleState::convert_effect_target_to_position(
                             *battle_target, move_action.source, Some(**target_pos))
                     },
-                    MoveEffect::ForcedReturn(battle_target) => {
-                        BattleState::convert_effect_target_to_position(
-                            *battle_target, move_action.source, Some(**target_pos))
-                    },
-                    // MoveEffect::AddFieldFlag(_ , _rat )
-                    // => {
-                    //     move_action.source
-                    // },
                     MoveEffect::Charge(_) => {
                         panic!("Not yet implemented")
                     },
-                    _ => {
-                        move_action.source
-                    }
+                    MoveEffect::AddFieldFlag(..) => move_action.source,
+                    // _ => { panic!("Not implemented battle action")}
                 };
 
                 let b_action = match hit_action {
@@ -1261,12 +1295,32 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                         BattleAction::Protect(active_move.name, 
                                 move_action.source, move_acc)
                     },
-                    // Wide Guard sets a field-wide flag rather than a per-pokemon one
-                    // MoveEffect::General(BattleEffect::WideGuard, _target, rat) => {
-                    //     BattleAction::PctAction(
-                    //         BattlePctAction::AddField(PokemonFieldState::WIDE_GUARD, true),
-                    //         move_action.source, *rat)
-                    // },
+                    MoveEffect::Healing(_target, DamageAmount::MoveDmgPct(dmg_pct)) => {
+                        if dmg_amount_if_atk.is_none() {
+                            // Illegal action, status move cannot have move damage
+                            panic!("Move damage on non-hitting move")
+                        }
+                        // TODO: Damage Effect can be modified, so dmg_amount cannot be determined here
+                        BattleAction::Heal(
+                            HealEffect { 
+                                target: effect_target_pos, 
+                                calc_healing: (dmg_amount_if_atk.unwrap() as f64 * dmg_pct.float()) as i32,
+                                heal_source: DamageSource::Move(move_action.pkm_move.name),
+                                owner: self.get_active_team_idx(move_action.source).unwrap()
+                            }
+                        )
+                    },
+                    MoveEffect::Healing(_target, DamageAmount::HealthPct(hp_pct)) => {
+                        let target_poke = self.get_active(effect_target_pos).unwrap();
+                        BattleAction::Heal(
+                            HealEffect { 
+                                target: effect_target_pos, 
+                                calc_healing: (target_poke.current_hp as f64 * hp_pct.float()) as i32,
+                                heal_source: DamageSource::Move(move_action.pkm_move.name),
+                                owner: self.get_active_team_idx(move_action.source).unwrap()
+                            }
+                        )
+                    }
                     _ => BattleState::convert_effect_to_baction(
                             hit_action,
                             effect_target_pos)
@@ -1649,6 +1703,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         // If HP is 0, faint and perform fainting actions and ignore other effects
         // NOTE: Faint needs to wait for after effects, so needs to be in its own queue
         if fainted {
+            // TODO: It has some weird priority, need to verify how/when
             cloned_state.action_queue.push_front(
                 BattleAction::Faint(dmg_effect.target)
             );
@@ -1658,6 +1713,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         // TODO: Think about how to calc this easily into ratio
         // maybe compare ratio to threshold rational
         let _health_ratio =  final_hp / total_hp;
+
+        // TODO: deprecate recoil/damage
 
         // Trigger if recoil/recovery if move permits (or do within move)
         if let (target, Some((effect_type, modifier))) = dmg_effect.dmg_after_effect {
@@ -1679,6 +1736,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                         target,
                         calc_healing: calc_damage,
                         heal_source: DamageSource::Heal(PokemonMoveName::Heat_Wave),
+                        owner: self.get_active_team_idx(target).unwrap()
                     })
                 }
             };
@@ -1700,6 +1758,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
         // TODO: BIG ROOT or ability check
         let healing_done = heal_effect.calc_healing.max(total_hp - target_pkmn.current_hp);
+
+        // TODO: Skip if full health
 
         target_pkmn.current_hp += healing_done;
         let _final_hp = target_pkmn.current_hp;
@@ -1940,8 +2000,28 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             },
             MoveEffect::ForcedReturn(_position) => {
                 BattleAction::Return(effect_target_pos)
-            }
-            _ => panic!("Not like this")
+            },
+            // TODO: Placeholder, move from this since I need more params
+            // MoveEffect::Healing(field_target, heal_pct) => {
+            //     let heal_effect = HealEffect {
+            //         target:effect_target_pos,
+            //         calc_healing: 1,
+            //         heal_source: DamageSource::Move(PokemonMoveName::Brave_Bird)
+            //     };
+            //     BattleAction::Heal(heal_effect)
+            // },
+            // MoveEffect::Damage(field_target, dmg_pct) => {
+            //     let heal_effect = DamageEffect {
+            //         target:effect_target_pos,
+            //         calc_damage: 1,
+            //         damage_source: DamageSource::Move(PokemonMoveName::Brave_Bird),
+            //         dmg_after_effect: (effect_target_pos, None)
+            //     };
+            //     BattleAction::Damage(heal_effect)
+            // },
+            MoveEffect::Charge(..) | 
+            MoveEffect::Damage(..) |
+            MoveEffect::Healing(.. ) => panic!("These should never hit here")
         }
     }
 

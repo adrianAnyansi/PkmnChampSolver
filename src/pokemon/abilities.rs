@@ -4,7 +4,7 @@ use strum::EnumCount;
 use strum_macros::{Display, AsRefStr, EnumString, EnumCount as EnumCountMacro};
 use serde::Deserialize;
 
-use crate::{battle::{BattleState, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{Pokemon, abilities::AbilityTriggerFlag::{CausesSpeedChange, OnEnter, OnWeatherChange}, moves::{FieldTarget, BitFlagValue128, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
+use crate::{battle::{BattleState, DamageEffect, TeamIndex, data::{ActivePokemon, BattleWeatherState}}, math::PkmnRational, pokemon::{Pokemon, abilities::AbilityTriggerFlag::{CausesSpeedChange, OnEnter, OnMoveDamage, OnWeatherChange}, moves::{BitFlagValue128, DamageAmount, FieldTarget, MoveEffect, PokemonBitFlag128, PokemonMove, StatSet}, poke_stat::{PokemonStatModifier, PokemonStatName}, types::PokemonType::{self, FIRE, GRASS}}};
 
 #[allow(non_camel_case_types)]
 #[derive(Deserialize, EnumString, Display, EnumCountMacro,
@@ -87,12 +87,21 @@ pub type OnEnterEffect<'simulation> =
         &ActivePokemon<'battle, 'simulation>
     ) -> Vec<MoveEffect>;
 
+pub type OnMoveDamageEffect<'simulation> =
+    for<'battle> fn(
+        &BattleState<'battle, 'simulation>,
+        TeamIndex,
+        DamageEffect,
+    ) -> Vec<MoveEffect>;
+
+
 // #[derive(Clone)]
 pub struct PokemonAbility<'simulation> {
     pub name:PokemonAbilityName,
     /// Actions triggered on entering the field
     // pub on_enter: Vec<MoveEffect>,
     pub enter_fn:Option<OnEnterEffect<'simulation>>,
+    pub move_damage_fn:Option<OnMoveDamageEffect<'simulation>>,
     pub type_flags: PokemonBitFlag128<AbilityTriggerFlag>,
     pub move_damage_modifier: Option<MoveDamageModifier<'simulation>>,
     pub speed_modif_func: Option<SpeedModifier<'simulation>>,
@@ -107,6 +116,7 @@ impl<'simulation> PokemonAbility<'simulation> {
             name, 
             // on_enter: vec![],
             enter_fn: None,
+            move_damage_fn: None,
             type_flags: PokemonBitFlag128::<AbilityTriggerFlag>::empty(),
             move_damage_modifier: None,
             speed_modif_func: None,
@@ -124,6 +134,13 @@ impl<'simulation> PokemonAbility<'simulation> {
     ) -> Self {
         self.enter_fn = Some(enter_fn);
         self.add_flag(OnEnter)
+    }
+
+    pub fn add_move_damage_effect(mut self,
+        damage_fn: OnMoveDamageEffect<'simulation>
+    ) -> Self {
+        self.move_damage_fn = Some(damage_fn);
+        self.add_flag(OnMoveDamage)
     }
 
     fn active_starter_ability_logic(boost_type:PokemonType, 
@@ -204,6 +221,17 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
                 }
             ).add_flag(OnWeatherChange)
         },
+        PokemonAbilityName::Rough_Skin => {
+            PokemonAbility::new(ably_name)
+            .add_move_damage_effect(
+                |_battle_state:&BattleState, _source:TeamIndex, damage:DamageEffect| {
+                    // damageeffect needs a source to target a pokemon
+                    // TODO: Check if move is a contact move
+                    return vec![MoveEffect::Damage(FieldTarget::OPPONENT, 
+                        DamageAmount::HealthPct(PkmnRational::new(1, 8)))]
+                }
+            )
+        },
         PokemonAbilityName::Intimidate => {
             PokemonAbility::new(ably_name)
             .add_enter_effect(
@@ -213,7 +241,18 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
                         FieldTarget::OPPONENT_ALL, PkmnRational::ONE())]
                 }
             )
-        }
+        },
+        PokemonAbilityName::Hospitality => {
+            PokemonAbility::new(ably_name)
+            .add_enter_effect(
+                |_battle_state:&BattleState, _source:&ActivePokemon| {
+                    return vec![
+                        MoveEffect::Healing(FieldTarget::ALLY, 
+                            DamageAmount::HealthPct(PkmnRational::new(1, 8)))
+                    ]
+                }
+            )
+        },
         _ => PokemonAbility::new(ably_name),
     }
 }

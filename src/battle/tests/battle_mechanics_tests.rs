@@ -416,34 +416,3 @@ fn test_sort_speed_queue_orders_faster_pokemon_first() {
     assert_eq!(first.source, FieldPosition::B1, "faster Venusaur should move first");
     assert_eq!(second.source, FieldPosition::F1, "slower Tyranitar should move second");
 }
-
-#[test]
-/// Back Pokemon with Intimidate should queue an Attack drop sourced from B1 that targets the front Pokemon
-fn test_exec_set_team_intimidate_queued_in_speed_queue() {
-    use crate::pokemon::abilities::{make_ability, PokemonAbility, PokemonAbilityName};
-    use crate::pokemon::poke_stat::PokemonNature;
-
-    let nothing: &'static PokemonAbility<'static> =
-        Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
-    let intimidate: &'static PokemonAbility<'static> =
-        Box::leak(Box::new(make_ability(PokemonAbilityName::Intimidate)));
-    let front: &'static TrainedPokemon<'static, 'static> = Box::leak(Box::new(
-        TrainedPokemon::new(get_pkmn(PokemonName::Tyranitar), nothing, PokemonNature::Quirky, None)));
-    let back: &'static TrainedPokemon<'static, 'static> = Box::leak(Box::new(
-        TrainedPokemon::new(get_pkmn(Charizard), intimidate, PokemonNature::Quirky, None)));
-
-    let mut bs = BattleState::new();
-    bs.exec_set_team(BattleTeamSide::FRONT, &vec![front]);
-    bs.exec_set_team(BattleTeamSide::BACK, &vec![back]);
-
-    assert_eq!(bs.speed_queue.len(), 2, "Intimidate queued for both opponents");
-    let queued = bs.speed_queue.front().unwrap();
-
-    assert!(queued.team_index.team_side == BattleTeamSide::BACK);
-    assert_eq!(queued.team_index.index, 0);
-
-    let BattleAction::PctActions(BattlePctAction::Stat(_), targets, _) = &queued.battle_action
-        else { panic!("expected a stat PctActions from Intimidate") };
-    let targets: Vec<FieldPosition> = targets.iter().flatten().copied().collect();
-    assert_eq!(targets, vec![FieldPosition::F1], "Intimidate should target the opposing front Pokemon");
-}
