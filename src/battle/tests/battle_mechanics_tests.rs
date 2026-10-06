@@ -1,7 +1,6 @@
 use super::*;
 use crate::pokemon::PokemonName::{Charizard, Garchomp, Kingambit, Venusaur};
 use crate::pokemon::moves::PokemonMoveName::Heat_Wave;
-use crate::pokemon::poke_stat::PokemonStatModifier::MINUS_5;
 use crate::pokemon::poke_stat::PokemonStatName::*;
 use crate::pokemon::*;
 use crate::pokemon::moves::{get_move, PokemonMoveName};

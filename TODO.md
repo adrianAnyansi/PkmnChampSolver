@@ -20,7 +20,17 @@ After Hospitality Im going to go fix the recoil/drain aspects
 ## MoveEffect improvements
 I need to do a rewrite of MoveEffect -> BattleAction, its very irritating to write anything when I'm doing 5M cases
 
-MoveEffect -> BattleAction function with optional arguments, thats gonna be next commit though
+MoveEffect -> BattleAction function with optional arguments, thats gonna be next commit
+So the idea is MoveEffect contains the spec and data, and BattleAction translates this to an active effect. All the attacker and field interactions should be resolved- Currently Damage/Heal need the current battle state, but move damage needs the move passed. I forgot what I planned for the MoveDamage... ugh
+Plan is tagging the moves, then updating the battle_action when needed
+
+So Recoil/Drain works like this.
+A move has a hit_action effect with the label DamageAmount::MoveDmgPct, with a link of recoil. (Oh shit I just remembered Parental Bond, I guess that makes 2 damageEffects).
+sim_move sees this, and tags the DamageEffect with flag to make Drain/Recoil. This is done here because I want the defensive move calculation to be done in sim_damage.
+In sim_damage, after calculation the recoil/drain generates a Damage/Heal effect.
+
+So now MoveEffect::Heal can generate in hit_action, it can generate from Recover, but it can generate in abilities too.
+
 
 ## Ability notes
 Ok lets think- for chrolophyll it can activate onEnter same as weather change. For retrieving the value & multiplier, i have the damage modifier method to use, but something like unburden needs a flag thats reset on certain values/situations.

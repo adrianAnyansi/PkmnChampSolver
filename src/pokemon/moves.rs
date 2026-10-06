@@ -443,6 +443,8 @@ pub enum PokemonMoveFlag {
 
     IGNORE_ACC, // This move ignores accuracy checks
 
+    /// Move has Recoil (self-Damage based on move damage)
+    MOVE_RECOIL,
     /// 1/3 recoil damage
     RECOIL_1_3RD,
     /// 1/4 recoil damage
@@ -450,6 +452,8 @@ pub enum PokemonMoveFlag {
 
     /// 1/2 healing drain
     HEAL_1_2HF,
+    /// Move has Drain (Healing based on Move damage)
+    MOVE_DRAIN,
 
     /// Move thaws source before doing anything
     MOVE_THAW,
@@ -709,7 +713,9 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
             pkmn_move_name, FIRE, Physical
         ).set_attr(120, 1.0, OPPONENT)
         .status_effect(BURNED, PkmnRational::pct(10), FieldTarget::OPPONENT,)
-        .add_flag(RECOIL_1_3RD),
+        .add_move_eff(MoveEffect::Damage(OPPONENT, DamageAmount::MoveDmgPct(PkmnRational::THIRD())))
+        .add_flag(MOVE_RECOIL),
+        // .add_flag(RECOIL_1_3RD),
 
 
         PokemonMoveName::Parting_Shot => PokemonMove::status(
@@ -743,7 +749,8 @@ pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Matcha_Gotcha => PokemonMove::new(
             pkmn_move_name, GRASS, Special
         ).set_power(80).set_target(OPPONENT_ALL)
-        .add_flag(HEAL_1_2HF)
+        // .add_flag(HEAL_1_2HF)
+        .add_flag(MOVE_DRAIN)
         .status_effect(BURNED, PkmnRational::pct(20), FieldTarget::OPPONENT,)
         .add_move_eff(MoveEffect::Healing(SELF, DamageAmount::MoveDmgPct(PkmnRational::new(1,2))))
         .add_flag(MOVE_THAW)

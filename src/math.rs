@@ -35,6 +35,8 @@ impl PkmnRational {
         PkmnRational { numer: 1, demon: 2}
     }
 
+    pub fn THIRD() -> PkmnRational { PkmnRational { numer: 1, demon: 3 }}
+
     pub fn float(&self) -> f64 {
         return self.numer as f64 / self.demon as f64
     }
