@@ -48,3 +48,14 @@ Therefore I'm changing the logic for non-fail cases* to just return a battlestat
 # Ability Triggers
 
 Contact =/= Damage, there are also situations were a move can deal 0 damage but triggers contact
+
+
+## Damage/Heal attribution
+
+So every damage effect needs to have attribution for certain effects
+Target: Some abilities are Opponent damage only
+Move: Magic Guard ignores secondary effects
+Field: Some damage/healing is based on the field, this overrides target
+Future sight: Has a team index but not always on the field
+
+AfterDamageEffect - Recoil and Drain always target the move user, so they dont need attribution but i'll leave it there

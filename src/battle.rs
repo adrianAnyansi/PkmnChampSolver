@@ -21,7 +21,7 @@ mod ability_test;
 use strum_macros::Display;
 
 use crate::battle;
-use crate::battle::DamageAfterEffect::Drain;
+use crate::battle::DamageAfterEffectEnum::Drain;
 use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, TrainedPokemon, VolatileEnums};
 use crate::pokemon::moves::DamageTiming::RECOIL;
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
@@ -274,6 +274,12 @@ pub struct MoveResult {
     pub display_str: String
 }
 
+#[derive(Clone, Copy)]
+pub enum EffectOwner {
+    Pokemon(TeamIndex),
+    FieldEffect(PokemonFieldState)
+}
+
 /// Damage Effect calculated by a move or other source
 #[derive(Clone)]
 pub struct DamageEffect {
@@ -282,7 +288,8 @@ pub struct DamageEffect {
     // TODO: This needs to handle multiple things like Ability damage,
     // Whirlpool, regular moves, Status
     pub damage_source: DamageSource,
-    pub dmg_after_effect: (FieldPosition, Option<(DamageAfterEffect, PkmnRational)>)
+    pub dmg_after_effect: (FieldPosition, Option<(DamageAfterEffectEnum, PkmnRational)>),
+    pub owner: EffectOwner
 }
 
 /// Heal effect calculated from another move or effect
@@ -298,7 +305,7 @@ pub struct HealEffect {
 
 /// Used to calculate recoil or healing after
 #[derive(Clone, Copy)]
-pub enum DamageAfterEffect {
+pub enum DamageAfterEffectEnum {
     /// Recoil damage from moves
     Recoil,
     /// Healing from moves
@@ -490,6 +497,18 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         };
 
         Some(TeamIndex { team_side, index })
+    }
+
+    /// Get the FieldPosition of a TeamIndex, None if that pokemon is not on the field
+    pub fn get_active_position(&self, team_index:TeamIndex) -> Option<FieldPosition> {
+        let positions = match team_index.team_side {
+            BattleTeamSide::FRONT => [FieldPosition::F1, FieldPosition::F2],
+            BattleTeamSide::BACK => [FieldPosition::B1, FieldPosition::B2],
+        };
+
+        positions.into_iter().find(|position| {
+            self.get_active_team_idx(*position) == Some(team_index)
+        })
     }
 
     /// Send out pokemon from ActiveTeam to field. Trigger abilities/items/effects
@@ -824,7 +843,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     /// Get Recoil/Heal damage from effect
     fn get_damage_after_effect(pkm_move:&PokemonMove) 
-        -> Option<(DamageAfterEffect, PkmnRational)> {
+        -> Option<(DamageAfterEffectEnum, PkmnRational)> {
         
         use PokemonMoveFlag::*;
         // recoil flags
@@ -847,10 +866,10 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 match hit_action {
                     MoveEffect::Healing(_target, 
                         DamageAmount::MoveDmgPct(pct)) => 
-                            return Some((DamageAfterEffect::Drain, *pct)),
+                            return Some((DamageAfterEffectEnum::Drain, *pct)),
                     MoveEffect::Damage(_target, 
                         DamageAmount::MoveDmgPct(pct)) => 
-                            return Some((DamageAfterEffect::Recoil, *pct)),
+                            return Some((DamageAfterEffectEnum::Recoil, *pct)),
                     _ => {}
                 }
             }
@@ -1223,11 +1242,13 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 let dmg_after_effect = BattleState::get_damage_after_effect(move_action.pkm_move);
 
                 // Trigger DamageEffect
+                let team_index = self.get_active_team_idx(move_action.source);
                 let dmg_effect = DamageEffect {
                     target: bat_pos,
                     calc_damage: move_damage,
                     damage_source: DamageSource::Move(move_action.pkm_move.name),
-                    dmg_after_effect: (move_action.source, dmg_after_effect)
+                    dmg_after_effect: (move_action.source, dmg_after_effect),
+                    owner: EffectOwner::Pokemon(team_index.unwrap())
                 };
                 
                 result_act_vec.push(BattleAction::Damage(dmg_effect));
@@ -1241,10 +1262,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             // -------------------------------------------------------------
 
             // generate on hit effects to the action queue
-
             for hit_action in &active_move.hit_actions {
 
-                // Skip if drain/recoil
+                // Skip drain/recoil effects
                 match hit_action {
                     MoveEffect::Healing(_, DamageAmount::MoveDmgPct(..)) |
                     MoveEffect::Damage(_, DamageAmount::MoveDmgPct(..)) => continue,
@@ -1668,14 +1688,16 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             if let Some(ability_fn) = defender.trained_pokemon.ability.move_damage_fn {
                 let ability_name = defender.trained_pokemon.ability.name;
                 let defender_idx = self.get_active_team_idx(dmg_effect.target).unwrap();
-                let attacker_pos = dmg_effect.dmg_after_effect.0;
+                let atk_pos = if let EffectOwner::Pokemon(atk_idx) = dmg_effect.owner {
+                    self.get_active_position(atk_idx)
+                } else {None};
 
                 for effect in ability_fn(self, defender_idx, &mut dmg_effect) {
                     // Ability owner is the source, so OPPONENT resolves to the attacker
                     ability_actions.extend(self.convert_move_eff_to_bat_action(
                         &effect,
                         dmg_effect.target,
-                        Some(attacker_pos),
+                        atk_pos,
                         Some(DamageSource::Ability(ability_name))
                     ));
                 }
@@ -1716,14 +1738,15 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
             if let DamageSource::Move(dmg_move_name) = dmg_effect.damage_source {
                 let ba = match effect_type {
-                    battle::DamageAfterEffect::Recoil => {
+                    battle::DamageAfterEffectEnum::Recoil => {
+                        let team_idx = self.get_active_team_idx(target);
                         BattleAction::Damage( DamageEffect {
                             target,
                             calc_damage,
                             damage_source: DamageSource::Recoil(dmg_move_name),
-                            dmg_after_effect: (target, None)
+                            dmg_after_effect: (target, None),
+                            owner: EffectOwner::Pokemon(team_idx.unwrap())
                         })
-                        
                     },
                     Drain => {
                         BattleAction::Heal( HealEffect {
@@ -2065,6 +2088,13 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         }
     }
 
+    /// Comprehensive* conversion of MoveEffect to BattleAction
+    /// move_effect: MoveEffect to convert
+    /// eff_source_pos: The position that created the effect, 
+    ///     used to determine SELF/OPP/etc final target
+    /// dest_eff_target_pos: An override if the opponent is determined. 
+    ///     Only send if target for the effect was determined prior to function call
+    /// move_eff_source: Keep track of the interaction that created this BattleAction
     pub fn convert_move_eff_to_bat_action (
         &self,
         move_effect:&MoveEffect,
@@ -2086,6 +2116,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 => {
 
                     if dest_eff_target_pos.is_some() {
+                        // returning just source or dest
                         vec![BattleState::convert_effect_target_to_position(
                             *battle_target, eff_source_pos, dest_eff_target_pos
                         )]
@@ -2121,13 +2152,17 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 },
                 MoveEffect::Damage(_target, DamageAmount::HealthPct(hp_pct)) => {
                     let target_poke = self.get_active(final_target_pos).unwrap();
+                    let team_idx = self.get_active_team_idx(eff_source_pos).unwrap();
                     BattleAction::Damage(
                         DamageEffect {
                             target: final_target_pos,
                             calc_damage: mult_and_round(
                                 target_poke.get_active_stat(PokemonStatName::HEALTH), hp_pct.float()),
                             damage_source: move_eff_source.unwrap(),
-                            dmg_after_effect: (final_target_pos, None)
+                            dmg_after_effect: (final_target_pos, None),
+                            // Assumption that move_effect always comes from pokemon right now
+                            owner: EffectOwner::Pokemon(team_idx)
+                            
                         }
                     )
                 },

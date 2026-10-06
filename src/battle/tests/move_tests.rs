@@ -1,6 +1,6 @@
 use crate::battle::battle_processor::BattleContainer;
 use crate::battle::data::{ActivePokemon, BattleWeatherState, PokemonBattleState};
-use crate::battle::{BattleAction, FieldPosition, BattleState, DamageAfterEffect, DamageSource};
+use crate::battle::{BattleAction, FieldPosition, BattleState, DamageAfterEffectEnum, DamageSource};
 use crate::math::PkmnRational;
 use crate::pokemon::PokemonName;
 use crate::pokemon::moves::{get_move, get_weather_modify_move, PokemonMoveName};
@@ -199,7 +199,7 @@ fn test_flare_blitz_queues_recoil_after_damage() {
         BattleAction::Damage(effect)
             if effect.target == FieldPosition::F1
                 && effect.dmg_after_effect.0 == FieldPosition::B1
-                && matches!(effect.dmg_after_effect.1, Some((DamageAfterEffect::Recoil, _)))
+                && matches!(effect.dmg_after_effect.1, Some((DamageAfterEffectEnum::Recoil, _)))
     ));
 
     root_bc.sim_next_action();
