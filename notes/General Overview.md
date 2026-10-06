@@ -43,3 +43,8 @@ If I just want to simulate a battle, the in-between resolver will roll the pct c
 In cases where there are multiple indepedent events (usually on multiple targets), it makes sense to spread (do multiple at once in an action) rather than in-sequence.
 
 Therefore I'm changing the logic for non-fail cases* to just return a battlestate instead of containers 
+
+
+# Ability Triggers
+
+Contact =/= Damage, there are also situations were a move can deal 0 damage but triggers contact

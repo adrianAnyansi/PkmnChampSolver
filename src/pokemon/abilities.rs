@@ -91,7 +91,7 @@ pub type OnMoveDamageEffect<'simulation> =
     for<'battle> fn(
         &BattleState<'battle, 'simulation>,
         TeamIndex,
-        DamageEffect,
+        &mut DamageEffect,
     ) -> Vec<MoveEffect>;
 
 
@@ -224,9 +224,9 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
         PokemonAbilityName::Rough_Skin => {
             PokemonAbility::new(ably_name)
             .add_move_damage_effect(
-                |_battle_state:&BattleState, _source:TeamIndex, damage:DamageEffect| {
-                    // damageeffect needs a source to target a pokemon
+                |_battle_state:&BattleState, _source:TeamIndex, damage:&mut DamageEffect| {
                     // TODO: Check if move is a contact move
+                    // damage effect needs a team_index to target a pokemon, not a battle target*
                     return vec![MoveEffect::Damage(FieldTarget::OPPONENT, 
                         DamageAmount::HealthPct(PkmnRational::new(1, 8)))]
                 }

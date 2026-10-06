@@ -292,6 +292,7 @@ pub struct HealEffect {
     pub calc_healing: i32,
     /// TODO: Re-using damage until this more details are needed
     pub heal_source: DamageSource,
+    /// TODO: This should include field effects
     pub owner: TeamIndex
 }
 
@@ -1652,12 +1653,34 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
     /// Simulate damage step, creating multiple universes if damage range
     /// causes multiple effects
-    fn sim_damage(&self, dmg_effect:DamageEffect) -> Vec<BattleContainer<'battle, 'simulation>> {
+    fn sim_damage(&self, mut dmg_effect:DamageEffect) -> Vec<BattleContainer<'battle, 'simulation>> {
 
         // TODO: Check if any abilities block/mitigate the damage, i.e disguise
         // NOTE: Might be bad to check here, lets assume damage is always accurate
 
         let mut cloned_state = self.clone();
+
+        // Defender ability effects triggered by move damage (i.e Rough Skin),
+        // evaluated before the damage is applied
+        let mut ability_actions: Vec<BattleAction<'battle>> = vec![];
+        if let DamageSource::Move(_) = dmg_effect.damage_source {
+            let defender = self.get_active(dmg_effect.target).unwrap();
+            if let Some(ability_fn) = defender.trained_pokemon.ability.move_damage_fn {
+                let ability_name = defender.trained_pokemon.ability.name;
+                let defender_idx = self.get_active_team_idx(dmg_effect.target).unwrap();
+                let attacker_pos = dmg_effect.dmg_after_effect.0;
+
+                for effect in ability_fn(self, defender_idx, &mut dmg_effect) {
+                    // Ability owner is the source, so OPPONENT resolves to the attacker
+                    ability_actions.extend(self.convert_move_eff_to_bat_action(
+                        &effect,
+                        dmg_effect.target,
+                        Some(attacker_pos),
+                        Some(DamageSource::Ability(ability_name))
+                    ));
+                }
+            }
+        }
 
         let target_pkmn: &mut ActivePokemon<'_, '_> = 
             cloned_state.get_active_mut(dmg_effect.target).unwrap();
@@ -1715,6 +1738,11 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             }
             // TODO: Raise error if damage source not a move*
         }
+
+        for ba in ability_actions.into_iter().rev() {
+            cloned_state.action_queue.push_front(ba);
+        }
+
 
         // TODO: currently create 1 BC, if ablities/items have % chance generate
         let mut bc = BattleContainer::simple(cloned_state, PkmnRational::ONE());
@@ -2088,6 +2116,18 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                             calc_healing: (target_poke.get_active_stat(PokemonStatName::HEALTH) as f64 * hp_pct.float()) as i32,
                             heal_source: move_eff_source.unwrap(),
                             owner: self.get_active_team_idx(eff_source_pos).unwrap()
+                        }
+                    )
+                },
+                MoveEffect::Damage(_target, DamageAmount::HealthPct(hp_pct)) => {
+                    let target_poke = self.get_active(final_target_pos).unwrap();
+                    BattleAction::Damage(
+                        DamageEffect {
+                            target: final_target_pos,
+                            calc_damage: mult_and_round(
+                                target_poke.get_active_stat(PokemonStatName::HEALTH), hp_pct.float()),
+                            damage_source: move_eff_source.unwrap(),
+                            dmg_after_effect: (final_target_pos, None)
                         }
                     )
                 },

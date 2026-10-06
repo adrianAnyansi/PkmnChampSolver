@@ -165,3 +165,72 @@ fn test_hospitality_heals_ally_one_eighth_on_send_out() {
     assert_eq!(heal.target, FieldPosition::B1);
     assert_eq!(heal.calc_healing, max_hp / 8);
 }
+
+#[test]
+fn test_rough_skin_damages_attacker_one_eighth_after_move_damage() {
+    use crate::battle::DamageSource;
+    use crate::pokemon::poke_stat::PokemonStatName;
+
+    let rough_skin = Box::leak(Box::new(make_ability(PokemonAbilityName::Rough_Skin)));
+    let trained_garchomp = Box::leak(Box::new(TrainedPokemon::new(
+        get_pkmn(PokemonName::Garchomp),
+        rough_skin,
+        PokemonNature::Quirky,
+        None,
+    )));
+    let garchomp = ActivePokemon::new(trained_garchomp);
+    let tyranitar = ActivePokemon::quick(PokemonName::Tyranitar);
+    let mut battle_state = BattleState::simple(tyranitar, garchomp);
+
+    let mut attack = get_move(PokemonMoveName::Dragon_Claw);
+    attack.accuracy = 1.0;
+    attack.hit_actions.clear();
+    BattleState::queue_move(
+        &mut battle_state.action_queue,
+        FieldPosition::F1,
+        &attack,
+        vec![FieldPosition::B1],
+    );
+
+    let attacker_max_hp = battle_state
+        .get_active(FieldPosition::F1)
+        .unwrap()
+        .get_active_stat(PokemonStatName::HEALTH);
+    let mut battle = BattleContainer::simple(battle_state, PkmnRational::ONE());
+
+    // Simulating the move queues the move damage
+    battle.sim_next_action();
+    let move_damage = match battle.battle_state.as_ref().unwrap().action_queue.front().unwrap() {
+        BattleAction::Damage(effect) => {
+            assert_eq!(effect.target, FieldPosition::B1);
+            assert!(matches!(effect.damage_source, DamageSource::Move(_)));
+            effect.calc_damage
+        }
+        action => panic!("expected move damage, got {action}"),
+    };
+    assert!(move_damage > 0);
+
+    // Applying the move damage queues Rough Skin damage on the attacker
+    battle.sim_next_action();
+    let state = battle.battle_state.as_ref().unwrap();
+    let ability_damage = state
+        .action_queue
+        .iter()
+        .find_map(|action| match action {
+            BattleAction::Damage(effect)
+                if matches!(effect.damage_source, DamageSource::Ability(PokemonAbilityName::Rough_Skin)) =>
+            {
+                Some(effect.clone())
+            }
+            _ => None,
+        })
+        .expect("Rough Skin should queue damage");
+
+    assert_eq!(ability_damage.target, FieldPosition::F1);
+    assert_eq!(ability_damage.calc_damage, mult_and_round(attacker_max_hp, 0.125));
+
+    // Applying it reduces the attacker's HP by 1/8 of its max HP
+    battle.sim_next_action();
+    let attacker = battle.battle_state.as_ref().unwrap().get_active(FieldPosition::F1).unwrap();
+    assert_eq!(attacker.current_hp, attacker_max_hp - ability_damage.calc_damage);
+}
