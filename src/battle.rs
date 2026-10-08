@@ -582,8 +582,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     pub fn queue_pre_turn_switch(&mut self, 
-    // act_poke:&'battle ActivePokemon<'battle, 'simulation>, 
-    position:FieldPosition) {
+        position:FieldPosition) {
         // TODO: Get current position
         // let bat_pos = self.get_active_idx_mut(position);
         let team_index = self.get_active_team_idx(position).unwrap();
@@ -788,33 +787,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             }
 
             true
-
-            // let valid_targets:Vec<BattlePosition> = stat_action.targets.iter().filter(
-            //     |pos:&&BattlePosition| {
-            //         let t_act_poke = self.get_active(**pos);
-
-            //         // Ensure that target pokemon exists
-            //         if t_act_poke.is_none() {
-            //             return false
-            //         }
-
-            //         // Check if blocked by ability or item (Clear Body, Covert Cloak)
-
-            //         let curr_pkmn = t_act_poke.expect("Non-null effect");
-                    
-            //         // Check if stat is maxed, then cancel
-            //         let stat_ref = curr_pkmn.get_active_stat_modf(stat_action.stat_name);
-            //         if *stat_ref == PokemonStatModifier::MINUS_6 && stat_action.change.direction() == -1 
-            //         || *stat_ref == PokemonStatModifier::PLUS_6 && stat_action.change.direction() == 1 {
-            //             return false
-            //         }
-            //         true
-            //     }
-            // ).copied().collect();
-            
-            
-            // valid_targets
-
         }
 
     fn can_perform_move(&self, pkm_move:&PokemonMove, move_action: &MoveAction  ) -> (bool, String) {
@@ -846,19 +818,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         -> Option<(DamageAfterEffectEnum, PkmnRational)> {
         
         use PokemonMoveFlag::*;
-        // recoil flags
-        // if pkm_move.flags.has_flag(RECOIL_1_3RD) {
-        //     return Some((DamageAfterEffect::Recoil, PkmnRational::new(1, 3)))
-        // } else if pkm_move.flags.has_flag(RECOIL_1_4TH) {
-        //     return Some((DamageAfterEffect::Recoil, PkmnRational::new(1, 4)))
-        // }
-
-        // if pkm_move.flags.has_flag(HEAL_1_2HF) {
-        //     return Some(
-        //         (DamageAfterEffect::Drain, PkmnRational::new(1, 2))
-        //     )
-        // }
-        // TODO: check move flags for drain/heal
         if pkm_move.flags.has_flag(MOVE_RECOIL) || 
         pkm_move.flags.has_flag(MOVE_DRAIN) {
            
@@ -904,60 +863,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             }
         };
 
-        return self.spawn_bc_for_single_prob(apply_func, rat);
-
-        // Old new implementation
-
-        // let valid_targets = self.can_perform_stat(&stat_action);
-        // let change_dir = if stat_action.change.direction() == 1 {"rose"} else {"fell"};
-        
-        // // Get all targets that are hit
-        // let prob_set = gen_power_set(vec![rat; valid_targets.len()]);
-
-        // let apply_func = 
-        //     |cloned_state:&mut BattleState, target_idx:u8| -> String {
-        //         let position = valid_targets[target_idx as usize];
-        //         cloned_state.exec_stat_change(position, &stat_action);
-        //         // stat
-        //         let target_poke = cloned_state.get_active(position).unwrap();
-        //         let stat_msg = format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
-        //             stat_action.stat_name, 
-        //             target_poke.get_active_stat_modf(stat_action.stat_name),
-        //         );
-        //         stat_msg
-        //     };
-        
-        // return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
-        
-        // // Old implementation
-        // let mut result_vecs:Vec<BattleContainer> = vec![];
-
-        // for (bin_comb, rat) in prob_set.iter().enumerate() {
-        //     if prob_set[bin_comb] == PkmnRational::ZERO() { continue; }
-
-        //     let mut clone_state = self.clone();
-        //     let mut stat_msg = String::new();
-
-        //     for (idx, target_pos) in valid_targets.iter().enumerate() {
-        //         if (bin_comb >> idx) & 0b1 == 0 {
-        //             let target_poke = clone_state.get_active(*target_pos).unwrap();
-        //             stat_msg.push_str(&format!("{} avoided the stat change!", target_poke));
-        //             continue
-        //         }
-        //         clone_state.exec_stat_change(*target_pos, &stat_action);
-        //         let target_poke = clone_state.get_active(*target_pos).unwrap();
-        //         stat_msg.push_str(&format!("{}'s {} {change_dir} to [{:?}]!", target_poke.trained_pokemon.pokemon,
-        //             stat_action.stat_name, 
-        //             target_poke.get_active_stat_modf(stat_action.stat_name),
-        //         ));
-        //     }
-        //     result_vecs.push(
-        //         BattleContainer::simple(clone_state, *rat)
-        //         .add_msg(stat_msg)
-        //     );
-        // }
-
-        // result_vecs
+        self.spawn_bc_for_single_prob(apply_func, rat)
         
     }
 
@@ -1280,51 +1186,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
                 result_act_vec.extend(b_actions);
 
-                // TODO: Use new move_eff -> BA, but override for single target
-                // let effect_target_pos = match hit_action {
-                //     MoveEffect::Stat(_, battle_target, _) |
-                //     MoveEffect::Status(_, battle_target, _) |
-                //     MoveEffect::General(_, battle_target, _) |
-                //     MoveEffect::AddFlag(_, battle_target , _ ) |
-                //     MoveEffect::Healing(battle_target, _) |
-                //     MoveEffect::ForcedReturn(battle_target) |
-                //     MoveEffect::Damage(battle_target, _)
-                //     => {
-                //         BattleState::convert_effect_target_to_position(
-                //             *battle_target, move_action.source, Some(**target_pos))
-                //     },
-                //     MoveEffect::Charge(_) => {
-                //         panic!("Not yet implemented")
-                //     },
-                //     MoveEffect::AddFieldFlag(..) => move_action.source,
-                // };
-
-                // let b_action = match hit_action {
-                //     // Protect overrides* see if best data model for this
-                //     MoveEffect::General(BattleEffect::Protect, _target, _rat) => {
-                //         BattleAction::Protect(active_move.name, 
-                //                 move_action.source, move_acc)
-                //     },
-                //     MoveEffect::Healing(_target, DamageAmount::HealthPct(hp_pct)) => {
-                //         let target_poke = self.get_active(effect_target_pos).unwrap();
-                //         BattleAction::Heal(
-                //             HealEffect { 
-                //                 target: effect_target_pos, 
-                //                 calc_healing: (target_poke.current_hp as f64 * hp_pct.float()) as i32,
-                //                 heal_source: DamageSource::Move(move_action.pkm_move.name),
-                //                 owner: self.get_active_team_idx(move_action.source).unwrap()
-                //             }
-                //         )
-                //     }
-                //     _ => BattleState::convert_effect_to_baction(
-                //             hit_action,
-                //             effect_target_pos)
-                // };
-
-                // if true {
-                //     // NOTE: hit_Action order should not matter*
-                //     result_act_vec.push(b_action);
-                // }
             }
 
             
@@ -1399,21 +1260,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             }
         }
     }
-
-    /// Base power calculation for moves, TODO: covering special power calcs
-    // fn base_power_calc(move_action: &MoveAction, act_poke:&ActivePokemon) -> i32 {
-    //     let base_power = move_action.pkm_move.power;
-
-    //     let atk_stat = match move_action.pkm_move.category {
-    //         Physical => act_poke.get_active_stat(PokemonStatName::ATTACK),
-    //         Special => act_poke.get_active_stat(PokemonStatName::SPECIAL_ATTACK),
-    //         _ => 1
-    //     };
-
-    //     // TODO: Special power calcs
-
-    //     return base_power
-    // }
 
     fn calc_move_damage(pkm_move: &mut PokemonMove,
         num_valid_targets:usize, 
@@ -1816,13 +1662,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 // NOTE: Cloning as move may need modification
                 return self.sim_move(&mut move_action.clone())
             },
-            // BattleAction::Stat(mut stat_actions) => {
-            //     let mut all_vecs = vec![];
-            //     for stat_action in stat_actions {
-            //         all_vecs.extend(self.sim_stat(stat_action));
-            //     }
-            //     return all_vecs
-            // },
             BattleAction::Status(mut status_action) => {
                 return self.sim_status(status_action)
             }
@@ -1881,9 +1720,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
                     // return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
                 },
-            // BattleAction::VolatileStatus(position, vol_status, accuracy) => {
-            //     return self.sim_vol_status(vol_status, position, accuracy)
-            // }
             _ => {
                     // panic!("Not implemented action sent")
                     println!("[WARN] Not yet implemented {action}");
@@ -2025,24 +1861,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             MoveEffect::ForcedReturn(_position) => {
                 BattleAction::Return(effect_target_pos)
             },
-            // TODO: Placeholder, move from this since I need more params
-            // MoveEffect::Healing(field_target, heal_pct) => {
-            //     let heal_effect = HealEffect {
-            //         target:effect_target_pos,
-            //         calc_healing: 1,
-            //         heal_source: DamageSource::Move(PokemonMoveName::Brave_Bird)
-            //     };
-            //     BattleAction::Heal(heal_effect)
-            // },
-            // MoveEffect::Damage(field_target, dmg_pct) => {
-            //     let heal_effect = DamageEffect {
-            //         target:effect_target_pos,
-            //         calc_damage: 1,
-            //         damage_source: DamageSource::Move(PokemonMoveName::Brave_Bird),
-            //         dmg_after_effect: (effect_target_pos, None)
-            //     };
-            //     BattleAction::Damage(heal_effect)
-            // },
             MoveEffect::Charge(..) | 
             MoveEffect::Damage(..) |
             MoveEffect::SpeedChangeFlag |
