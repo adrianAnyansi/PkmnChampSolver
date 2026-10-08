@@ -10,55 +10,30 @@ Turn 0 doesnt matter until trainer choice and turn mechanics work
 ## Today
 --- 
 
-Been rewriting the recoil/drain mechanics right now.
-Stemmed from Hospitality and generizing the action
-Cant think of a case that drains & recoils rn
-This should also scale to things like Explosion & Belly Drum which is good.
+Want to either do Drought/Sandstorm, but that relies on DamageEffect and end of turn generation, as well as tracking weather turns (weather memory)
 
-After Hospitality Im going to go fix the recoil/drain aspects
+Also could do Sturdy due to damage calculation, which includes ability memory
 
-## MoveEffect improvements
-I need to do a rewrite of MoveEffect -> BattleAction, its very irritating to write anything when I'm doing 5M cases
-
-MoveEffect -> BattleAction function with optional arguments, thats gonna be next commit
-So the idea is MoveEffect contains the spec and data, and BattleAction translates this to an active effect. All the attacker and field interactions should be resolved- Currently Damage/Heal need the current battle state, but move damage needs the move passed. I forgot what I planned for the MoveDamage... ugh
-Plan is tagging the moves, then updating the battle_action when needed
-
-So Recoil/Drain works like this.
-A move has a hit_action effect with the label DamageAmount::MoveDmgPct, with a link of recoil. (Oh shit I just remembered Parental Bond, I guess that makes 2 damageEffects).
-sim_move sees this, and tags the DamageEffect with flag to make Drain/Recoil. This is done here because I want the defensive move calculation to be done in sim_damage.
-In sim_damage, after calculation the recoil/drain generates a Damage/Heal effect.
-
-So now MoveEffect::Heal can generate in hit_action, it can generate from Recover, but it can generate in abilities too.
-
+Also I can do Fairy Aura, which is just a move modifier
 
 ## Ability notes
+For chlorophyll, I can put a flag to say "Check this on weather change"
+But whenever speed gets calculated, I gotta pull the modifier.
+So OnWeatherChange + SpeedModifier means engine has to recalc speed order.
+
+So it would be great to make an event that says "speed change occurred". That itself could be a MoveEffect that I can generate on change, but requires memory, which I don't want as it complicates things
+
+Also realised I cant check speed prior to running things, because onWeatherChange has already changed the speed.
+
+AI says the ability sets a dirty flag basically- this is similar to what I was thinking about raising an event. So the speed check can remain stateless, but onWeather contains the previous -> new state and knows whether a change occurred.
+Going forward with that... 
+
+Forgot that in order to test this, I need to set weather & I need to set weather turns too, I also don't quite have turn logic 100% so I need another test for that
+
+---
+
 Ok lets think- for chrolophyll it can activate onEnter same as weather change. For retrieving the value & multiplier, i have the damage modifier method to use, but something like unburden needs a flag thats reset on certain values/situations.
 For example, Unburden gets a boost thats applied after base but before stat mult, but I don't want a constant check of ability speed every time- any other stat which should sit on the pokemon (like grass seed)
-
-### Heal/Recoil derailment
-For Hospitality, I have to spawn an effect but determine healing from it-
-The Damage/Heal effects were written with Move recoil in mind so they dont work well for these cases
-
-Issue is the percentage could refer to a move damage (drain), to the opponent health, etc.
-So based on move damage, based on health, or Strength Sap*/Pain Split, 
-Can target ally, self, team, opponent
-Pollen Puff, Present (prob not in Champions)
-Revive - Revival Blessing, Lunar Dance, Healing Wish*
-
-So Target, Type will be the enum (or reverse?)
-Then I'll know how to calc the damage/heal amount, and who to give it to
-Since there can be many enums for the amount, lets move that to an enum instead- but I want a pct/move/custom enum, so new enum then
-
-Since dmg_after_effect doesn't work anymore as a generic identifier, I need to add more onto this. 
-An enum can ident when it works-
-Damage - Recoil, Always, 2nd effect
-    (How to handle Future Sight/Fire Spin damage)
-
-Currently I have Move -> Damage {eff}, then after the damage hits, it can spawn objects.
-
-## Damage/Heal owner stuff
-I need a owner / source identifier thing eventually, but putting this off for now I just solving the recoil+heal change
 
 
 ## Ability memory
@@ -78,26 +53,19 @@ Knock Off - Item mechanic
 
 ## Abilities to implement
 Chlorophyll - Speed mechanic with instant change
-Rough Skin - OnDamage, do more damage (check source)
 Flower Veil - Protect status
-Hospitality - OnEnter, give ally 1/8? healing
 Unburden - Item mechanic
 Gale Wings - Speed mechanic
 Sturdy - OnDamage from full, leave at 1HP, 
 Levitate - Ignore Ground moves
+
 Sand Stream - OnEnter, Start Sandstorm
 Drought - OnEnter, start Sun
-Fairy Aura - Fairy moves do more, Dragon? does less
+
 Sand Force - MoveModifier In Sandstorm, boost moves
+Fairy Aura - Fairy moves do more, Dragon? does less
 
 ## Current Thoughts
----
-
-What now, heavy slam mechanics? ew
-Items are possible but thats the same as ability triggers
-
-
-
 ---
 
 ## TrainedPokemon vs Active vs Inactive

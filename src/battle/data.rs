@@ -200,6 +200,11 @@ pub struct ActivePokemon<'battle, 'simulation: 'battle> {
     pub battle_status: PokemonBitFlag128<PokemonBattleState>,
     /// Confusion counter
     pub confusion_count: u8,
+
+    /// Volatile memory used for abilities
+    pub ability_vol_memory: u8,
+    /// Set memory used for abilities
+    pub ability_set_memory: u8
 }
 
 impl<'battle, 'simulation: 'battle> ActivePokemon<'battle, 'simulation> {
@@ -210,15 +215,15 @@ impl<'battle, 'simulation: 'battle> ActivePokemon<'battle, 'simulation> {
                 status: PokemonStatus::NONE,
                 stat_modifier: [PokemonStatModifier::ZERO; 5],
                 trained_pokemon,
-                // move_history: Vec::new(),
                 actions_taken: 0, // first turn effect counter
                 consec_protect_count: 0,
                 last_move_used: None,
                 last_move_failed: false,
                 forced_move: None,
-                // in_battle_flags: HashMap::new(), // Keep track of various flags
                 battle_status: PokemonBitFlag128::<PokemonBattleState>::empty(),
                 confusion_count: 0,
+                ability_vol_memory: 0,
+                ability_set_memory: 0,
             }
     }
 

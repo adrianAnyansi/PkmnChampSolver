@@ -2045,6 +2045,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             // },
             MoveEffect::Charge(..) | 
             MoveEffect::Damage(..) |
+            MoveEffect::SpeedChangeFlag |
             MoveEffect::Healing(.. ) => panic!("These should never hit here")
         }
     }
@@ -2130,7 +2131,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                     panic!("Not yet implemented")
                 },
                 // Doesn't matter, unused
-                MoveEffect::AddFieldFlag(..) 
+                MoveEffect::AddFieldFlag(..) |
+                MoveEffect::SpeedChangeFlag
                 => vec![eff_source_pos],
             }
         ;

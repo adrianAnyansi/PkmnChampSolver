@@ -97,18 +97,24 @@ pub enum MoveEffect {
     Stat(StatSet, FieldTarget, PkmnRational),
     Status(PokemonStatus, FieldTarget, PkmnRational),
     General(BattleEffect, FieldTarget, PkmnRational),
+
     /// Add flag to target
     AddFlag(PokemonBattleState, FieldTarget, PkmnRational),
     /// Add field flag to field
     AddFieldFlag(PokemonFieldState, PkmnRational),
+
     /// Charge move, Source, Target
     Charge(FieldTarget),
     /// Force target to return to team
     ForcedReturn(FieldTarget),
+
     /// Heal by amount
     Healing(FieldTarget, DamageAmount),
     /// Damage by amount
     Damage(FieldTarget, DamageAmount), // TODO: Add type for recoil & etc
+    
+    /// Trigger the engine to update speed order
+    SpeedChangeFlag,
 }
 
 #[derive(Clone, Copy, Debug)]

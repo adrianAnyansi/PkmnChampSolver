@@ -81,31 +81,43 @@ pub type SpeedModifier<'simulation> =
         &ActivePokemon<'battle, 'simulation>
     ) -> Option<PkmnRational>;
 
-pub type OnEnterEffect<'simulation> =
+pub type OnEnterFn<'simulation> =
     for<'battle> fn(
         &BattleState<'battle, 'simulation>,
         &ActivePokemon<'battle, 'simulation>
     ) -> Vec<MoveEffect>;
 
-pub type OnMoveDamageEffect<'simulation> =
+pub type OnMoveDamageFn<'simulation> =
     for<'battle> fn(
         &BattleState<'battle, 'simulation>,
         TeamIndex,
         &mut DamageEffect,
     ) -> Vec<MoveEffect>;
 
+pub type OnWeatherChangeFn<'simulation> =
+    for <'battle> fn(
+        &BattleState<'battle, 'simulation>,
+        BattleWeatherState,
+    ) -> Vec<MoveEffect>;
 
 // #[derive(Clone)]
 pub struct PokemonAbility<'simulation> {
     pub name:PokemonAbilityName,
-    /// Actions triggered on entering the field
-    // pub on_enter: Vec<MoveEffect>,
-    pub enter_fn:Option<OnEnterEffect<'simulation>>,
-    pub move_damage_fn:Option<OnMoveDamageEffect<'simulation>>,
     pub type_flags: PokemonBitFlag128<AbilityTriggerFlag>,
+    
+    /// Actions triggered on entering the field
+    pub enter_fn:Option<OnEnterFn<'simulation>>,
+    /// Actions triggered by MoveDamage
+    pub move_damage_fn:Option<OnMoveDamageFn<'simulation>>,
+    /// Weather change actions
+    pub weather_change_fn:Option<OnWeatherChangeFn<'simulation>>,
+    
+    /// Modifier for move damage/calculation
     pub move_damage_modifier: Option<MoveDamageModifier<'simulation>>,
+    /// Modifier for speed modification
     pub speed_modif_func: Option<SpeedModifier<'simulation>>,
-    // pub 
+
+
     /// Ties this ability's lifetime to the simulation it was built in
     _marker: std::marker::PhantomData<&'simulation ()>,
 }
@@ -117,6 +129,7 @@ impl<'simulation> PokemonAbility<'simulation> {
             // on_enter: vec![],
             enter_fn: None,
             move_damage_fn: None,
+            weather_change_fn: None,
             type_flags: PokemonBitFlag128::<AbilityTriggerFlag>::empty(),
             move_damage_modifier: None,
             speed_modif_func: None,
@@ -130,18 +143,25 @@ impl<'simulation> PokemonAbility<'simulation> {
     }
 
     pub fn add_enter_effect(mut self,
-        enter_fn: OnEnterEffect<'simulation>
+        enter_fn: OnEnterFn<'simulation>
     ) -> Self {
         self.enter_fn = Some(enter_fn);
         self.add_flag(OnEnter)
     }
 
     pub fn add_move_damage_effect(mut self,
-        damage_fn: OnMoveDamageEffect<'simulation>
+        damage_fn: OnMoveDamageFn<'simulation>
     ) -> Self {
         self.move_damage_fn = Some(damage_fn);
         self.add_flag(OnMoveDamage)
     }
+
+    pub fn add_weather_chg_effect(mut self,
+        weather_eff: OnWeatherChangeFn<'simulation>
+    ) -> Self {
+        self.weather_change_fn = Some(weather_eff);
+        self.add_flag(OnWeatherChange)
+    } 
 
     fn active_starter_ability_logic(boost_type:PokemonType, 
         curr_types:&[PokemonType], health_pct:PkmnRational,
@@ -212,6 +232,16 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
         },
         PokemonAbilityName::Chlorophyll => {
             PokemonAbility::new(ably_name)
+            .add_weather_chg_effect(
+                |_battle_state:&BattleState, prev_w:BattleWeatherState| {
+                    if prev_w == BattleWeatherState::SUN ||
+                    _battle_state.weather == BattleWeatherState::SUN {
+                        vec![MoveEffect::SpeedChangeFlag]
+                    } else {
+                        vec![]
+                    }
+                }
+            )
             .add_speed_modifier(
                 |battle_state:&BattleState, _source:&ActivePokemon| {
                     if battle_state.weather == BattleWeatherState::SUN {
