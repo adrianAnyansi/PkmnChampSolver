@@ -89,11 +89,11 @@ impl BitFlagValue128 for PokemonFieldState {
     }
 }
 
-#[derive(Clone, Copy)]
-/// Contains field status effects
-pub enum BattleFieldEffect {
-    FieldEffect(PokemonFieldState)
-}
+// #[derive(Clone, Copy)]
+// /// Contains field status effects
+// pub enum BattleFieldEffect {
+//     FieldEffect(PokemonFieldState)
+// }
 
 // Volatile statuses
 
@@ -393,7 +393,7 @@ impl<'battle, 'simulation: 'battle> ActiveTeam<'battle, 'simulation> {
 }
 
 
-#[derive(PartialEq, Clone, Copy, EnumString, Display)]
+#[derive(PartialEq, Clone, Copy, EnumString, Display, Debug)]
 pub enum BattleWeatherState {
     /// No weather
     NONE,

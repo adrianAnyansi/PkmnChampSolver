@@ -102,6 +102,8 @@ pub enum MoveEffect {
     AddFlag(PokemonBattleState, FieldTarget, PkmnRational),
     /// Add field flag to field
     AddFieldFlag(PokemonFieldState, PkmnRational),
+    /// Set weather
+    SetWeather(BattleWeatherState),
 
     /// Charge move, Source, Target
     Charge(FieldTarget),

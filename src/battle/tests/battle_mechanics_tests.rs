@@ -415,3 +415,22 @@ fn test_sort_speed_queue_orders_faster_pokemon_first() {
     assert_eq!(first.source, FieldPosition::B1, "faster Venusaur should move first");
     assert_eq!(second.source, FieldPosition::F1, "slower Tyranitar should move second");
 }
+
+#[test]
+fn test_weather_set_and_expire() {
+    let mut bs = BattleState::simple(
+        ActivePokemon::quick(PokemonName::Tyranitar), ActivePokemon::quick(Venusaur));
+
+    bs.exec_set_weather(BattleWeatherState::SUN, false);
+    assert_eq!(bs.weather, BattleWeatherState::SUN);
+    assert_eq!(bs.weather_turns, 5);
+
+    bs.mark_end_of_turn();
+    assert_eq!(bs.weather, BattleWeatherState::SUN);
+    assert_eq!(bs.weather_turns, 4, "Turn should reduce by 1");
+
+    bs.weather_turns = 1;
+    bs.mark_end_of_turn();
+    assert_eq!(bs.weather, BattleWeatherState::NONE, "Weather resets to none");
+    assert_eq!(bs.weather_turns, 0);
+}

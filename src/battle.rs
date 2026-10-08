@@ -22,7 +22,7 @@ use strum_macros::Display;
 
 use crate::battle;
 use crate::battle::DamageAfterEffectEnum::Drain;
-use crate::battle::data::{ActivePokemon, ActiveTeam, BattleFieldEffect, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, TrainedPokemon, VolatileEnums};
+use crate::battle::data::{ActivePokemon, ActiveTeam, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, TrainedPokemon, VolatileEnums};
 use crate::pokemon::moves::DamageTiming::RECOIL;
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
 use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, DamageAmount, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_move_priority, get_weather_modify_move};
@@ -100,6 +100,7 @@ pub enum BattleAction<'battle> {
     /// Force pokemon to use move
     ForceMove(FieldPosition, PokemonMoveName),
 
+    Generic(MoveEffect, FieldPosition),
     
     // TODO: Transition stat/status/protect to this version
     /// Subset to contain % action effects, no miss case. <action, target, %>
@@ -397,6 +398,8 @@ pub struct BattleState<'battle, 'simulation: 'battle> {
 
     /// Current Weather
     pub weather: BattleWeatherState,
+    /// Weather flags
+    pub weather_turns: u8,
     /// active terrain (only 1) on the field
     pub terrain: BattleTerrain,
     /// Other effects not included yet
@@ -440,6 +443,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             b_poke_idx2: None,
 
             weather: BattleWeatherState::NONE,
+            weather_turns: 0,
             terrain: BattleTerrain::NONE,
             effects: PokemonBitFlag128::<PokemonFieldState>::empty(),
             room: 0,
@@ -1206,6 +1210,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             }
         };
 
+        // TODO: Use the BC builder to spawn each scenario
         let mut result_bcs:Vec<BattleContainer> = Vec::new();
         for (bin_comb, rat) in prob_set.iter().enumerate() {
             if *rat == PkmnRational::ZERO() {continue;}
@@ -1517,6 +1522,16 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         }
     }
 
+    /// Set weather on field
+    fn exec_set_weather(&mut self, new_weather:BattleWeatherState, boosted_turns:bool) {
+        
+        // Check if extreme sun/rain
+        self.weather = new_weather;
+        // TODO: extreme rain/sun never change, prob set to max u8
+        let turns = if !boosted_turns {5} else {8};
+        self.weather_turns = turns;
+    }
+
     /// Simulate damage step, creating multiple universes if damage range
     /// causes multiple effects
     fn sim_damage(&self, mut dmg_effect:DamageEffect) -> Vec<BattleContainer<'battle, 'simulation>> {
@@ -1554,12 +1569,12 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             cloned_state.get_active_mut(dmg_effect.target).unwrap();
 
         // let curr_hp = target_pkmn.current_hp;
-        let total_hp = target_pkmn.get_active_stat(HEALTH);
+        // let total_hp = target_pkmn.get_active_stat(HEALTH);
         // TODO: Any pre-damage takes (items, abilities, endure)
         let dmg_done = dmg_effect.calc_damage.min(target_pkmn.current_hp);
 
         target_pkmn.current_hp -= dmg_done;
-        let final_hp = target_pkmn.current_hp;
+        // let final_hp = target_pkmn.current_hp;
         
         let fainted = target_pkmn.current_hp == 0;
         let dmg_msg = format!("{target_pkmn} took {dmg_done} damage!");
@@ -1715,11 +1730,23 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             BattleAction::PctActions(
                 BattlePctAction::Stat(stat_set), targets, rat) => {
 
-                    // TODO: Multi target stat change is not implemented
-                    return self.sim_stat(&stat_set, targets[0].unwrap(), rat);
+                // TODO: Multi target stat change is not implemented
+                return self.sim_stat(&stat_set, targets[0].unwrap(), rat);
 
-                    // return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
-                },
+                // return self.spawn_bcs_for_power_set(&prob_set, apply_func, None);
+            },
+            BattleAction::Generic(move_eff, field_position) => {
+                match move_eff {
+                    MoveEffect::SetWeather(new_weather) => {
+                        // TODO: Check item for turn extension
+                        self.exec_set_weather(new_weather, false);
+                        return vec![BattleContainer::one(self.clone(), None)]
+                    },
+                    _ => {
+                        panic!("Invalid MoveEffect used in BA::Generic")
+                    }
+                }
+            }
             _ => {
                     // panic!("Not implemented action sent")
                     println!("[WARN] Not yet implemented {action}");
@@ -1773,7 +1800,15 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     pub fn mark_end_of_turn(&mut self) -> &mut Self {
         
         // TODO: Effect order
+        
         // Weather effect
+        if self.weather_turns > 0 {
+            self.weather_turns -= 1;
+            if self.weather_turns == 0 {
+                self.weather = BattleWeatherState::NONE;
+            }
+        }
+
         // Terrain
         // Future-Sight/Wish/Etc
         // Binding damage
@@ -1860,6 +1895,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             },
             MoveEffect::ForcedReturn(_position) => {
                 BattleAction::Return(effect_target_pos)
+            },
+            move_eff @ MoveEffect::SetWeather(..) => {
+                BattleAction::Generic(*move_eff, effect_target_pos)
             },
             MoveEffect::Charge(..) | 
             MoveEffect::Damage(..) |
@@ -1950,7 +1988,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 },
                 // Doesn't matter, unused
                 MoveEffect::AddFieldFlag(..) |
-                MoveEffect::SpeedChangeFlag
+                MoveEffect::SpeedChangeFlag |
+                MoveEffect::SetWeather(..)
                 => vec![eff_source_pos],
             }
         ;
@@ -1997,6 +2036,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                     BattleAction::Protect(PokemonMoveName::Brave_Bird, 
                             eff_source_pos, PkmnRational::ONE())
                 },
+                move_eff @ MoveEffect::SetWeather(..) => {
+                    BattleAction::Generic(*move_eff, eff_source_pos)
+                },
                 _ => BattleState::convert_effect_to_baction(
                                 move_effect,
                                 final_target_pos)
@@ -2016,7 +2058,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             team = &self.b_team;
         }
         let act_poke = team.get(team_index.index).unwrap();
-        // let act_poke = self.get_active(position);
         let speed = act_poke.get_active_stat(PokemonStatName::SPEED);
         // TODO: Check paralysis, Trick Room, etc
         speed as u32

@@ -16,6 +16,9 @@ Also could do Sturdy due to damage calculation, which includes ability memory
 
 Also I can do Fairy Aura, which is just a move modifier
 
+
+For weather, I have no way of setting the weather by move/ability i think
+
 ## Ability notes
 For chlorophyll, I can put a flag to say "Check this on weather change"
 But whenever speed gets calculated, I gotta pull the modifier.
@@ -29,6 +32,9 @@ AI says the ability sets a dirty flag basically- this is similar to what I was t
 Going forward with that... 
 
 Forgot that in order to test this, I need to set weather & I need to set weather turns too, I also don't quite have turn logic 100% so I need another test for that
+
+Ok I forgot that weather needs to check item- similar to screens
+So I need the battleaction/etc to hold the source position
 
 ---
 
