@@ -1,4 +1,4 @@
-use std::cell::OnceCell;
+use std::sync::OnceLock;
 
 use strum::EnumCount;
 use strum_macros::{Display, AsRefStr, EnumString, EnumCount as EnumCountMacro};
@@ -59,71 +59,67 @@ impl BitFlagValue128 for AbilityTriggerFlag {
 }
 
 // pub type MoveDamageModifier = for<'battle> fn(
-//     &BattleState<'battle, 'simulation>,
-//     &ActivePokemon<'battle, 'simulation>,
-//     &ActivePokemon<'battle, 'simulation>,
+//     &BattleState<'battle>,
+//     &ActivePokemon<'battle>,
+//     &ActivePokemon<'battle>,
 //     &PokemonMove,
 // ) -> PkmnRational;
 
-pub type MoveDamageModifier<'simulation> = 
+pub type MoveDamageModifier = 
 // Box< dyn for<'battle> Fn(
      for<'battle> fn(
-        &BattleState<'battle, 'simulation>,
-        &ActivePokemon<'battle, 'simulation>,
-        &ActivePokemon<'battle, 'simulation>,
+        &BattleState<'battle>,
+        &ActivePokemon<'battle>,
+        &ActivePokemon<'battle>,
         &PokemonMove,
     ) -> Option<PkmnRational>
 // >
 ;
 
-pub type SpeedModifier<'simulation> = 
+pub type SpeedModifier = 
     for<'battle> fn(
-        &BattleState<'battle, 'simulation>,
-        &ActivePokemon<'battle, 'simulation>
+        &BattleState<'battle>,
+        &ActivePokemon<'battle>
     ) -> Option<PkmnRational>;
 
-pub type OnEnterFn<'simulation> =
+pub type OnEnterFn =
     for<'battle> fn(
-        &BattleState<'battle, 'simulation>,
-        &ActivePokemon<'battle, 'simulation>
+        &BattleState<'battle>,
+        &ActivePokemon<'battle>
     ) -> Vec<MoveEffect>;
 
-pub type OnMoveDamageFn<'simulation> =
+pub type OnMoveDamageFn =
     for<'battle> fn(
-        &BattleState<'battle, 'simulation>,
+        &BattleState<'battle>,
         TeamIndex,
         &mut DamageEffect,
     ) -> Vec<MoveEffect>;
 
-pub type OnWeatherChangeFn<'simulation> =
-    for <'battle> fn(
-        &BattleState<'battle, 'simulation>,
+pub type OnWeatherChangeFn =
+    for<'battle> fn(
+        &BattleState<'battle>,
         BattleWeatherState,
     ) -> Vec<MoveEffect>;
 
 // #[derive(Clone)]
-pub struct PokemonAbility<'simulation> {
+pub struct PokemonAbility {
     pub name:PokemonAbilityName,
     pub type_flags: PokemonBitFlag128<AbilityTriggerFlag>,
     
     /// Actions triggered on entering the field
-    pub on_enter_fn:Option<OnEnterFn<'simulation>>,
+    pub on_enter_fn:Option<OnEnterFn>,
     /// Actions triggered by MoveDamage
-    pub move_damage_fn:Option<OnMoveDamageFn<'simulation>>,
+    pub move_damage_fn:Option<OnMoveDamageFn>,
     /// Weather change actions
-    pub weather_change_fn:Option<OnWeatherChangeFn<'simulation>>,
+    pub weather_change_fn:Option<OnWeatherChangeFn>,
     
     /// Modifier for move damage/calculation
-    pub move_damage_modifier: Option<MoveDamageModifier<'simulation>>,
+    pub move_damage_modifier: Option<MoveDamageModifier>,
     /// Modifier for speed modification
-    pub speed_modif_func: Option<SpeedModifier<'simulation>>,
-
-
-    /// Ties this ability's lifetime to the simulation it was built in
-    _marker: std::marker::PhantomData<&'simulation ()>,
+    pub speed_modif_func: Option<SpeedModifier>,
 }
 
-impl<'simulation> PokemonAbility<'simulation> {
+impl PokemonAbility {
     pub fn new(name:PokemonAbilityName) -> Self {
         PokemonAbility { 
             name, 
@@ -134,7 +130,6 @@ impl<'simulation> PokemonAbility<'simulation> {
             type_flags: PokemonBitFlag128::<AbilityTriggerFlag>::empty(),
             move_damage_modifier: None,
             speed_modif_func: None,
-            _marker: std::marker::PhantomData,
         }
     }
 
@@ -144,21 +139,21 @@ impl<'simulation> PokemonAbility<'simulation> {
     }
 
     pub fn add_enter_effect(mut self,
-        enter_fn: OnEnterFn<'simulation>
+        enter_fn: OnEnterFn
     ) -> Self {
         self.on_enter_fn = Some(enter_fn);
         self.add_flag(OnEnter)
     }
 
     pub fn add_move_damage_effect(mut self,
-        damage_fn: OnMoveDamageFn<'simulation>
+        damage_fn: OnMoveDamageFn
     ) -> Self {
         self.move_damage_fn = Some(damage_fn);
         self.add_flag(OnMoveDamage)
     }
 
     pub fn add_weather_chg_effect(mut self,
-        weather_eff: OnWeatherChangeFn<'simulation>
+        weather_eff: OnWeatherChangeFn
     ) -> Self {
         self.weather_change_fn = Some(weather_eff);
         self.add_flag(OnWeatherChange)
@@ -172,37 +167,28 @@ impl<'simulation> PokemonAbility<'simulation> {
             curr_types.contains(&boost_type))
     }
 
-    fn add_damage_modifier(mut self, modf_closure:MoveDamageModifier<'simulation>) -> Self{
+    fn add_damage_modifier(mut self, modf_closure:MoveDamageModifier) -> Self{
         self.move_damage_modifier = Some(modf_closure);
         self.type_flags.set_flag(AbilityTriggerFlag::OnMoveDamage);
         self
     }
 
-    fn add_speed_modifier(mut self, modf:SpeedModifier<'simulation>) -> Self {
+    fn add_speed_modifier(mut self, modf:SpeedModifier) -> Self {
         self.speed_modif_func = Some(modf);
         self.type_flags.set_flag(CausesSpeedChange);
         self
     }
 }
 
-pub struct PokemonAbilityLibrary<'simulation> {
-    /// One slot per `PokemonAbilityName` variant, indexed by discriminant, built lazily on first access
-    slots: Box<[OnceCell<PokemonAbility<'simulation>>]>,
+static ABILITY_CACHE: [OnceLock<PokemonAbility>; PokemonAbilityName::COUNT] =
+    [const { OnceLock::new() }; PokemonAbilityName::COUNT];
+
+/// Abilities are built lazily on first use and shared for the program lifetime
+pub fn get_ability(ably_name: PokemonAbilityName) -> &'static PokemonAbility {
+    ABILITY_CACHE[ably_name as usize].get_or_init(|| make_ability(ably_name))
 }
 
-impl<'simulation> PokemonAbilityLibrary<'simulation> {
-    pub fn new () -> Self {
-        Self {
-            slots: (0..PokemonAbilityName::COUNT).map(|_| OnceCell::new()).collect(),
-        }
-    }
-
-    pub fn get_ability(&self, ably_name: PokemonAbilityName) -> &PokemonAbility<'simulation> {
-        self.slots[ably_name as usize].get_or_init(|| make_ability(ably_name))
-    }
-}
-
-pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbility<'simulation> {
+pub fn make_ability(ably_name: PokemonAbilityName) -> PokemonAbility {
     match ably_name {
         PokemonAbilityName::Blaze => PokemonAbility {
             move_damage_modifier: Some(

@@ -13,7 +13,6 @@ Turn 0 doesnt matter until trainer choice and turn mechanics work
 ## Today
 --- 
 
-Drought/Sandstorm now
 
 ---
 
@@ -43,9 +42,6 @@ Unburden - Item mechanic
 Gale Wings - Priority mechanic
 Sturdy - OnDamage from full, leave at 1HP, 
 Levitate - Ignore Ground moves
-
-Sand Stream - OnEnter, Start Sandstorm
-Drought - OnEnter, start Sun
 
 Sand Force - MoveModifier In Sandstorm, boost moves
 Fairy Aura - Fairy moves do more, Dragon? does less

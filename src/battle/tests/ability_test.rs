@@ -3,13 +3,13 @@ use crate::battle::data::{ActivePokemon, TrainedPokemon};
 use crate::battle::{BattleAction, BattlePctAction, BattleState, BattleTeamSide, FieldPosition, MoveAction, SpeedBattleAction};
 use crate::battle::data::BattleWeatherState;
 use crate::math::{mult_and_round, PkmnRational};
-use crate::pokemon::abilities::{make_ability, PokemonAbility, PokemonAbilityName};
+use crate::pokemon::abilities::{get_ability, PokemonAbility, PokemonAbilityName};
 use crate::pokemon::moves::{get_move, get_move_priority, MoveEffect, PokemonMoveName};
 use crate::pokemon::poke_stat::{PokemonNature, PokemonStatName};
 use crate::pokemon::types::PokemonType;
 use crate::pokemon::{get_pkmn, Pokemon, PokemonName};
 
-fn neutral_target() -> ActivePokemon<'static, 'static> {
+fn neutral_target() -> ActivePokemon<'static> {
     let pokemon = Box::leak(Box::new(Pokemon {
         name: PokemonName::Venusaur,
         base_stats: get_pkmn(PokemonName::Venusaur).base_stats.clone(),
@@ -18,7 +18,7 @@ fn neutral_target() -> ActivePokemon<'static, 'static> {
         weight: 100.0,
         types: vec![PokemonType::TYPELESS],
     }));
-    let ability = Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
+    let ability = get_ability(PokemonAbilityName::Nothing);
     let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
         pokemon,
         ability,
@@ -32,7 +32,7 @@ fn neutral_target() -> ActivePokemon<'static, 'static> {
 #[test]
 fn test_blaze_boosts_second_fire_move_below_one_third_hp() {
     let target = neutral_target();
-    let blaze = Box::leak(Box::new(make_ability(PokemonAbilityName::Blaze)));
+    let blaze = get_ability(PokemonAbilityName::Blaze);
     let trained_charizard = Box::leak(Box::new(TrainedPokemon::new(
         get_pkmn(PokemonName::Charizard),
         blaze,
@@ -101,16 +101,14 @@ fn test_blaze_boosts_second_fire_move_below_one_third_hp() {
 #[test]
 /// Back Pokemon with Intimidate should queue an Attack drop sourced from B1 that targets the front Pokemon
 fn test_exec_set_team_intimidate_queued_in_speed_queue() {
-    use crate::pokemon::abilities::{make_ability, PokemonAbility, PokemonAbilityName};
+    use crate::pokemon::abilities::{get_ability, PokemonAbility, PokemonAbilityName};
     use crate::pokemon::poke_stat::PokemonNature;
 
-    let nothing: &'static PokemonAbility<'static> =
-        Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
-    let intimidate: &'static PokemonAbility<'static> =
-        Box::leak(Box::new(make_ability(PokemonAbilityName::Intimidate)));
-    let front: &'static TrainedPokemon<'static, 'static> = Box::leak(Box::new(
+    let nothing = get_ability(PokemonAbilityName::Nothing);
+    let intimidate = get_ability(PokemonAbilityName::Intimidate);
+    let front: &'static TrainedPokemon<'static> = Box::leak(Box::new(
         TrainedPokemon::new(get_pkmn(PokemonName::Tyranitar), nothing, PokemonNature::Quirky, None)));
-    let back: &'static TrainedPokemon<'static, 'static> = Box::leak(Box::new(
+    let back: &'static TrainedPokemon<'static> = Box::leak(Box::new(
         TrainedPokemon::new(get_pkmn(PokemonName::Charizard), intimidate, PokemonNature::Quirky, None)));
 
     let mut bs = BattleState::new();
@@ -142,7 +140,7 @@ fn test_hospitality_heals_ally_one_eighth_on_send_out() {
     let max_hp = b1.get_active_stat(crate::pokemon::poke_stat::PokemonStatName::HEALTH);
     b1.current_hp = max_hp / 2;
 
-    let hospitality = Box::leak(Box::new(make_ability(PokemonAbilityName::Hospitality)));
+    let hospitality = get_ability(PokemonAbilityName::Hospitality);
     let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
         get_pkmn(PokemonName::Charizard),
         hospitality,
@@ -169,8 +167,7 @@ fn test_hospitality_heals_ally_one_eighth_on_send_out() {
 
 #[test]
 fn test_drought_sets_sun_on_send_out() {
-    let drought: &'static PokemonAbility<'static> =
-        Box::leak(Box::new(make_ability(PokemonAbilityName::Drought)));
+    let drought = get_ability(PokemonAbilityName::Drought);
     let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
         get_pkmn(PokemonName::Charizard),
         drought,
@@ -201,8 +198,7 @@ fn test_drought_sets_sun_on_send_out() {
 
 #[test]
 fn test_sand_stream_sets_sandstorm_on_send_out() {
-    let sand_stream: &'static PokemonAbility<'static> =
-        Box::leak(Box::new(make_ability(PokemonAbilityName::Sand_Stream)));
+    let sand_stream = get_ability(PokemonAbilityName::Sand_Stream);
     let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
         get_pkmn(PokemonName::Tyranitar),
         sand_stream,
@@ -233,10 +229,8 @@ fn test_sand_stream_sets_sandstorm_on_send_out() {
 
 #[test]
 fn test_chlorophyll_reorders_speed_queue_after_sun_weather() {
-    let nothing: &'static PokemonAbility<'static> =
-        Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
-    let chlorophyll: &'static PokemonAbility<'static> =
-        Box::leak(Box::new(make_ability(PokemonAbilityName::Chlorophyll)));
+    let nothing = get_ability(PokemonAbilityName::Nothing);
+    let chlorophyll = get_ability(PokemonAbilityName::Chlorophyll);
 
     let charizard = Box::leak(Box::new(TrainedPokemon::new(
         get_pkmn(PokemonName::Charizard),
@@ -316,7 +310,7 @@ fn test_rough_skin_damages_attacker_one_eighth_after_move_damage() {
     use crate::battle::DamageSource;
     use crate::pokemon::poke_stat::PokemonStatName;
 
-    let rough_skin = Box::leak(Box::new(make_ability(PokemonAbilityName::Rough_Skin)));
+    let rough_skin = get_ability(PokemonAbilityName::Rough_Skin);
     let trained_garchomp = Box::leak(Box::new(TrainedPokemon::new(
         get_pkmn(PokemonName::Garchomp),
         rough_skin,

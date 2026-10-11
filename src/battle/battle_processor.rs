@@ -5,9 +5,9 @@ use crate::math::{PkmnRational, get_random_int};
 
 
 // Contains Battle State 
-pub struct BattleContainer<'battle, 'simulation: 'battle> {
-    pub battle_ctns: Vec<BattleContainer<'battle, 'simulation>>,
-    pub battle_state: Option<BattleState<'battle, 'simulation>>,
+pub struct BattleContainer<'battle> {
+    pub battle_ctns: Vec<BattleContainer<'battle>>,
+    pub battle_state: Option<BattleState<'battle>>,
     pub pct_chance: PkmnRational,
     
     pub message: String,
@@ -15,9 +15,9 @@ pub struct BattleContainer<'battle, 'simulation: 'battle> {
 }
 
 
-impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
+impl<'battle> BattleContainer<'battle> {
 
-    pub fn new() -> BattleContainer<'battle, 'simulation> {
+    pub fn new() -> BattleContainer<'battle> {
         BattleContainer {
             battle_ctns: vec![],
             battle_state: None,
@@ -27,8 +27,8 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
         }
     }
 
-    pub fn simple(battle_state:BattleState<'battle, 'simulation>, 
-        pct_chance:PkmnRational) -> BattleContainer<'battle, 'simulation> {
+    pub fn simple(battle_state:BattleState<'battle>, 
+        pct_chance:PkmnRational) -> BattleContainer<'battle> {
             BattleContainer {
                 battle_ctns: vec![],
                 battle_state: Some(battle_state),
@@ -38,8 +38,8 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
             }
         }
 
-    pub fn one(battle_state:BattleState<'battle, 'simulation>,
-        message:Option<String>) -> BattleContainer<'battle, 'simulation> {
+    pub fn one(battle_state:BattleState<'battle>,
+        message:Option<String>) -> BattleContainer<'battle> {
             BattleContainer { 
                 battle_ctns: vec![], 
                 battle_state: Some(battle_state), 
@@ -106,7 +106,7 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
     }
 
     /// Pick a battle container at random
-    pub fn pick(&self) -> &BattleContainer<'battle, 'simulation> {
+    pub fn pick(&self) -> &BattleContainer<'battle> {
 
         if self.is_leaf() {
             return self
@@ -131,7 +131,7 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
     }
 
     /// Pick a battle container at random, consuming and returning ownership
-    pub fn pick_owned(self) -> BattleContainer<'battle, 'simulation> {
+    pub fn pick_owned(self) -> BattleContainer<'battle> {
 
         let BattleContainer {
             battle_ctns,
@@ -157,7 +157,7 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
                  10_000);
 
         let mut curr_val = PkmnRational::ZERO();
-        let mut last_bc:Option<BattleContainer<'battle, 'simulation>> = None;
+        let mut last_bc:Option<BattleContainer<'battle>> = None;
         for eval_bc in battle_ctns.into_iter() {
 
             // TODO: Fix comparison operator
@@ -190,7 +190,7 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
             };
             b_state.action_num += 1;
             
-            let new_bcs:Vec<BattleContainer<'battle, 'simulation>> = b_state.sim_action(action);
+            let new_bcs:Vec<BattleContainer<'battle>> = b_state.sim_action(action);
 
             if new_bcs.is_empty() {
                 // if zero, no change to state
@@ -234,8 +234,8 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
 
 }
 
-pub struct BattleProcessor<'battle, 'simulation: 'battle> {
-    pub battle_ctns:Vec<BattleContainer<'battle, 'simulation>>,
+pub struct BattleProcessor<'battle> {
+    pub battle_ctns:Vec<BattleContainer<'battle>>,
     pub teams:String, // TODO: Implement static teams
     
     /// number of iterations that have occurred
@@ -244,9 +244,9 @@ pub struct BattleProcessor<'battle, 'simulation: 'battle> {
     pub state_hashes:String, // TODO: Keep hashes that have been processed
 }
 
-impl<'battle, 'simulation: 'battle> BattleProcessor<'battle, 'simulation> {
+impl<'battle> BattleProcessor<'battle> {
 
-    pub fn new() -> BattleProcessor<'battle, 'simulation>{
+    pub fn new() -> BattleProcessor<'battle>{
         BattleProcessor {
             battle_ctns: vec![],
             teams: "".to_string(),
@@ -258,8 +258,8 @@ impl<'battle, 'simulation: 'battle> BattleProcessor<'battle, 'simulation> {
 
     /// Collapse container by making a random value and choosing a state to return
     #[deprecated(note="Incomplete and does not get the right value")]
-    fn collapse_ctn(bc:BattleContainer<'battle, 'simulation>, 
-        seed:Option<PkmnRational>) -> BattleContainer<'battle, 'simulation> {
+    fn collapse_ctn(bc:BattleContainer<'battle>, 
+        seed:Option<PkmnRational>) -> BattleContainer<'battle> {
         
         if bc.battle_ctns.len() == 0 {
             return bc

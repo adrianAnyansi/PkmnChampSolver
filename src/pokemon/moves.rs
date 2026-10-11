@@ -171,7 +171,7 @@ impl StatChange {
         }
 }
 
-impl<'simulation> PokemonMove {
+impl PokemonMove {
     pub fn new (move_name:PokemonMoveName, 
         move_type:PokemonType, 
         catg:PokemonMoveCategory) -> Self {
@@ -613,7 +613,7 @@ mod tests {
     }
 }
 
-pub fn get_move<'simulation>(pkmn_move_name:PokemonMoveName) -> PokemonMove {
+pub fn get_move(pkmn_move_name:PokemonMoveName) -> PokemonMove {
 
     use PokemonMoveCategory::*;
     use PokemonType::*;
@@ -848,9 +848,9 @@ pub fn get_charge_message(move_name:PokemonMoveName) -> String {
     }
 }
 
-pub fn format_pkmn_message<'battle, 'simulation: 'battle>(message_template:String,
-    source_poke:&ActivePokemon<'battle, 'simulation>,
-    dest_poke:Option<ActivePokemon<'battle, 'simulation>>) -> String {
+pub fn format_pkmn_message<'battle>(message_template:String,
+    source_poke:&ActivePokemon<'battle>,
+    dest_poke:Option<ActivePokemon<'battle>>) -> String {
 
         message_template
         .replace("{source_poke}", &source_poke.to_string())

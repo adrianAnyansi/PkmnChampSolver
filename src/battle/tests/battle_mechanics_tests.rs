@@ -160,7 +160,7 @@ fn test_send_out_and_return_actions_update_field() {
     assert_eq!(bs.f_poke_idx2, None);
 }
 
-fn dummy_bc<'battle>() -> BattleContainer<'battle, 'static> {
+fn dummy_bc<'battle>() -> BattleContainer<'battle> {
     let ttar_pkmn = ActivePokemon::quick(PokemonName::Tyranitar);
     let ven_pkmn = ActivePokemon::quick(PokemonName::Venusaur);
 

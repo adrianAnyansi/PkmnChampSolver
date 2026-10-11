@@ -4,7 +4,7 @@
 use strum_macros::{Display, EnumString};
 
 use crate::math::PkmnRational;
-use crate::pokemon::abilities::{PokemonAbility, PokemonAbilityName, make_ability};
+use crate::pokemon::abilities::{PokemonAbility, PokemonAbilityName, get_ability};
 use crate::pokemon::types::{PokemonType, get_type_multipler};
 use crate::pokemon::{self, Pokemon, PokemonName};
 use crate::pokemon::moves::{BitFlagValue128, PokemonBitFlag128, PokemonMoveName};
@@ -80,7 +80,10 @@ impl PokemonStatus {
 #[derive(Debug, Copy, Clone)]
 /// Contains volatile/permanent states affecting the field
 pub enum PokemonFieldState {
+    /// Protects from spread moves
     WIDE_GUARD,
+    /// Allied pokemon take 0.5 special 
+    LIGHT_SCREEN
 }
 
 impl BitFlagValue128 for PokemonFieldState {
@@ -118,17 +121,17 @@ impl VolatileEnums {
 
 /// Represents a Pokemon with its species and trainer-selected configuration.
 #[derive(Clone)]
-pub struct TrainedPokemon<'battle, 'simulation: 'battle> {
+pub struct TrainedPokemon<'battle> {
     pub pokemon: &'static Pokemon,
     /// additional stats, must be 32+32+2 total
     pub trained_stats: PokemonStats,
-    pub ability: &'battle PokemonAbility<'simulation>,
+    pub ability: &'battle PokemonAbility,
     pub nature: PokemonNature,
 }
 
-impl<'battle, 'simulation: 'battle> TrainedPokemon<'battle, 'simulation> {
+impl<'battle> TrainedPokemon<'battle> {
     pub fn new (pokemon:&'static Pokemon,
-        ability:&'battle PokemonAbility<'simulation>,
+        ability:&'battle PokemonAbility,
         nature:PokemonNature,
         trained_stats: Option<PokemonStats>) -> Self {
         Self {
@@ -179,8 +182,8 @@ impl<'battle, 'simulation: 'battle> TrainedPokemon<'battle, 'simulation> {
 
 /// Represents an active pokemon slot including current hp, status and boosts
 #[derive(Clone, Copy)]
-pub struct ActivePokemon<'battle, 'simulation: 'battle> {
-    pub trained_pokemon: &'battle TrainedPokemon<'battle, 'simulation>,
+pub struct ActivePokemon<'battle> {
+    pub trained_pokemon: &'battle TrainedPokemon<'battle>,
 
     pub status: PokemonStatus,
     pub stat_modifier: [PokemonStatModifier; 5], // temp exclude evasion & acc
@@ -207,8 +210,8 @@ pub struct ActivePokemon<'battle, 'simulation: 'battle> {
     pub ability_set_memory: u8
 }
 
-impl<'battle, 'simulation: 'battle> ActivePokemon<'battle, 'simulation> {
-    pub fn new (trained_pokemon:&'battle TrainedPokemon<'battle, 'simulation>) -> Self {
+impl<'battle> ActivePokemon<'battle> {
+    pub fn new (trained_pokemon:&'battle TrainedPokemon<'battle>) -> Self {
             let max_hp = trained_pokemon.get_stat(PokemonStatName::HEALTH);
             Self {
                 current_hp: max_hp, // copied first
@@ -227,9 +230,9 @@ impl<'battle, 'simulation: 'battle> ActivePokemon<'battle, 'simulation> {
             }
     }
 
-    pub fn quick(poke_name:PokemonName) -> ActivePokemon<'static, 'static> {
+    pub fn quick(poke_name:PokemonName) -> ActivePokemon<'static> {
         let pokemon = pokemon::get_pkmn(poke_name);
-        let noth_ability: &'static PokemonAbility<'static> = Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
+        let noth_ability: &'static PokemonAbility = get_ability(PokemonAbilityName::Nothing);
 
         // TODO: This gets leaked for quick testing, but ensure that its not broken
         let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
@@ -296,7 +299,7 @@ impl<'battle, 'simulation: 'battle> ActivePokemon<'battle, 'simulation> {
 
 }
 
-impl core::fmt::Display for ActivePokemon<'_, '_> {
+impl core::fmt::Display for ActivePokemon<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut hp_pct_str:String = String::new();
         let max_hp = self.get_active_stat(PokemonStatName::HEALTH);
@@ -316,8 +319,8 @@ impl core::fmt::Display for ActivePokemon<'_, '_> {
 }
 
 #[derive(Clone, Copy)]
-pub struct ActiveTeam<'battle, 'simulation: 'battle> {
-    pub pokemon: [Option<ActivePokemon<'battle, 'simulation>>; 6],
+pub struct ActiveTeam<'battle> {
+    pub pokemon: [Option<ActivePokemon<'battle>>; 6],
     /// Mega tracking
     pub used_mega: bool,
     pub has_mega: bool
@@ -326,13 +329,13 @@ pub struct ActiveTeam<'battle, 'simulation: 'battle> {
     // any other team based stuff here
 }
 
-impl<'battle, 'simulation: 'battle> ActiveTeam<'battle, 'simulation> {
+impl<'battle> ActiveTeam<'battle> {
     // TODO: Use Trained Pokemon instead
 
     /// Create new team from pokemon
-    pub fn new_from_pokemon (pokemon_vec:Vec<ActivePokemon<'battle, 'simulation>>) -> ActiveTeam<'battle, 'simulation> {
+    pub fn new_from_pokemon (pokemon_vec:Vec<ActivePokemon<'battle>>) -> ActiveTeam<'battle> {
 
-        let mut pokemon:[Option<ActivePokemon<'battle, 'simulation>>; 6] = [None; 6];
+        let mut pokemon:[Option<ActivePokemon<'battle>>; 6] = [None; 6];
         for (idx, poke) in pokemon_vec.iter().enumerate() {
             pokemon[idx] = Some(*poke);
         }
@@ -344,11 +347,11 @@ impl<'battle, 'simulation: 'battle> ActiveTeam<'battle, 'simulation> {
         }
     }
 
-    pub fn empty () -> ActiveTeam<'battle, 'simulation> {
+    pub fn empty () -> ActiveTeam<'battle> {
         ActiveTeam::new_from_pokemon(vec![])
     }
 
-    pub fn add_poke(&mut self, new_poke:ActivePokemon<'battle, 'simulation>) -> usize {
+    pub fn add_poke(&mut self, new_poke:ActivePokemon<'battle>) -> usize {
 
         let mut empty_idx:usize = 0;
         for poke in self.pokemon.iter() {
@@ -364,14 +367,14 @@ impl<'battle, 'simulation: 'battle> ActiveTeam<'battle, 'simulation> {
         empty_idx
     }
 
-    pub fn get(&self, index:usize) -> Option<&ActivePokemon<'battle, 'simulation>> {
+    pub fn get(&self, index:usize) -> Option<&ActivePokemon<'battle>> {
         if index >= self.pokemon.len() {
             return None
         }
         self.pokemon[index].as_ref()
     }
 
-    pub fn get_mut(&mut self, index:usize) -> Option<&mut ActivePokemon<'battle, 'simulation>> {
+    pub fn get_mut(&mut self, index:usize) -> Option<&mut ActivePokemon<'battle>> {
         if index >= self.pokemon.len() {
             return None
         }
