@@ -1,10 +1,11 @@
 use crate::battle::battle_processor::BattleContainer;
 use crate::battle::data::{ActivePokemon, TrainedPokemon};
-use crate::battle::{BattleAction, BattlePctAction, BattleState, BattleTeamSide, FieldPosition};
+use crate::battle::{BattleAction, BattlePctAction, BattleState, BattleTeamSide, FieldPosition, MoveAction, SpeedBattleAction};
+use crate::battle::data::BattleWeatherState;
 use crate::math::{mult_and_round, PkmnRational};
-use crate::pokemon::abilities::{make_ability, PokemonAbilityName};
-use crate::pokemon::moves::{get_move, PokemonMoveName};
-use crate::pokemon::poke_stat::PokemonNature;
+use crate::pokemon::abilities::{make_ability, PokemonAbility, PokemonAbilityName};
+use crate::pokemon::moves::{get_move, get_move_priority, MoveEffect, PokemonMoveName};
+use crate::pokemon::poke_stat::{PokemonNature, PokemonStatName};
 use crate::pokemon::types::PokemonType;
 use crate::pokemon::{get_pkmn, Pokemon, PokemonName};
 
@@ -164,6 +165,86 @@ fn test_hospitality_heals_ally_one_eighth_on_send_out() {
 
     assert_eq!(heal.target, FieldPosition::B1);
     assert_eq!(heal.calc_healing, max_hp / 8);
+}
+
+#[test]
+fn test_chlorophyll_reorders_speed_queue_after_sun_weather() {
+    let nothing: &'static PokemonAbility<'static> =
+        Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));
+    let chlorophyll: &'static PokemonAbility<'static> =
+        Box::leak(Box::new(make_ability(PokemonAbilityName::Chlorophyll)));
+
+    let charizard = Box::leak(Box::new(TrainedPokemon::new(
+        get_pkmn(PokemonName::Charizard),
+        nothing,
+        PokemonNature::Quirky,
+        None,
+    )));
+    let venusaur = Box::leak(Box::new(TrainedPokemon::new(
+        get_pkmn(PokemonName::Venusaur),
+        chlorophyll,
+        PokemonNature::Quirky,
+        None,
+    )));
+
+    let mut battle_state = BattleState::simple(
+        ActivePokemon::new(charizard),
+        ActivePokemon::new(venusaur),
+    );
+
+    let charizard_move = get_move(PokemonMoveName::Flare_Blitz);
+    let venusaur_move = get_move(PokemonMoveName::Solar_Beam);
+    let charizard_idx = battle_state.get_active_team_idx(FieldPosition::F1).unwrap();
+    let venusaur_idx = battle_state.get_active_team_idx(FieldPosition::B1).unwrap();
+
+    battle_state.speed_queue.push_back(SpeedBattleAction {
+        priority: get_move_priority(&charizard_move),
+        team_index: charizard_idx,
+        battle_action: BattleAction::Move(MoveAction {
+            source: FieldPosition::F1,
+            targets: vec![FieldPosition::B1],
+            pkm_move: &charizard_move,
+        }),
+    });
+    battle_state.speed_queue.push_back(SpeedBattleAction {
+        priority: get_move_priority(&venusaur_move),
+        team_index: venusaur_idx,
+        battle_action: BattleAction::Move(MoveAction {
+            source: FieldPosition::B1,
+            targets: vec![FieldPosition::F1],
+            pkm_move: &venusaur_move,
+        }),
+    });
+
+    battle_state.sort_speed_queue();
+    assert!(battle_state.speed_queue.front().unwrap().team_index == charizard_idx,
+        "Charizard should move first while the weather is normal");
+
+    battle_state.exec_set_weather(BattleWeatherState::SUN, false);
+    let weather_flag = battle_state
+        .action_queue
+        .iter()
+        .find(|action| matches!(action, BattleAction::Generic(MoveEffect::SpeedChangeFlag, _)))
+        .expect("setting sun should create a speed-change flag action");
+    assert!(matches!(weather_flag, BattleAction::Generic(MoveEffect::SpeedChangeFlag, _)));
+
+    let consumed = battle_state
+        .sim_action(weather_flag.clone())
+        .into_iter()
+        .next()
+        .expect("speed change flag should be consumed as an action");
+    assert!(consumed.battle_state.is_some());
+    assert!(battle_state.speed_dirty_flag,
+        "sun weather should mark the speed queue dirty after the flag is consumed");
+    assert!(
+        battle_state.get_active_pokemon_speed(venusaur_idx) ==
+            (battle_state.get_active(FieldPosition::B1).unwrap().get_active_stat(PokemonStatName::SPEED) as u32 * 2),
+        "Chlorophyll doubles Venusaur's speed in Sun"
+    );
+
+    battle_state.sort_speed_queue();
+    assert!(battle_state.speed_queue.front().unwrap().team_index == venusaur_idx,
+        "Venusaur should move first after its Chlorophyll speed boost in Sun");
 }
 
 #[test]

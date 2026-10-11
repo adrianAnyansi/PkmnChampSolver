@@ -14,18 +14,21 @@ Turn 0 doesnt matter until trainer choice and turn mechanics work
 --- 
 
 Speed order is getting done-
+
+I need the speed flag to call the speed sort function
+Leaving the priority ability stuff for Gale Wings implementation
+
+With speed queue done, I can put the Chlorophyll test 
+
+Btw my solution for:
+Quash- Put a flag, and sort in the queue
+After You- Override speed order, and since a speed change can't occur before the next move, should be fine.
+
+
 I gotta put the priority as a flag as well for Gale Wings
 The plan is speed flag/priority flag sorts the speed order + moves correctly
 Then I dont gotta think about it anymore
 
-Annoying part is some times speed order doesn't get sorted until the end of certain actions, I just have to ignore this
-I don't have a way to push certain BAs to speed order (not moves) 
-
-Just realized because of Quash, After You, technically this makes speed order very weird... Now I gotta make a list of this
-
-Quash - Last in turn, multiple = speed order
-After You - Target moves immediately after pokemon
-Me First - Copies target move and uses it - Wait is this even in champions
 
 ---
 

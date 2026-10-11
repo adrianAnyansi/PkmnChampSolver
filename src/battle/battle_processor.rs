@@ -178,12 +178,13 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
         
         self.message = String::new(); // Reset message since a simulation moves the bc forward
 
-        if self.battle_state.is_some() {
+        if let Some(b_state) = &mut self.battle_state {
             
-            let b_state = self.battle_state.as_mut().unwrap();
+            // let b_state = self.battle_state.as_mut().unwrap();
+            // TODO: Use an enum so I can better iterate between BC and BS
             
             // pop action outside of the simulation step
-            let action = match b_state.action_queue.pop_front() {
+            let action = match b_state.pop_next_action() {
                 Some(action) => action,
                 None => return
             };
@@ -191,12 +192,11 @@ impl<'battle, 'simulation: 'battle> BattleContainer<'battle, 'simulation> {
             
             let new_bcs:Vec<BattleContainer<'battle, 'simulation>> = b_state.sim_action(action);
 
-            if new_bcs.len() == 0 {
+            if new_bcs.is_empty() {
                 // if zero, no change to state
                 self.message = "No state change occurred from action*, review".to_string();
                 return 
-            }
-            else if new_bcs.len() == 1 {
+            } else if new_bcs.len() == 1 {
                 // Need to iterate & consume the vector
                 let b_ctn = new_bcs.into_iter().next().unwrap();
                 self.battle_state = b_ctn.battle_state;

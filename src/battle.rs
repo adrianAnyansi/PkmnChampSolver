@@ -464,6 +464,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         }
     }
 
+    const FIELD_POS:[FieldPosition;4] = [FieldPosition::F1, FieldPosition::F2,
+                        FieldPosition::B1, FieldPosition::B2];
+
     pub fn simple (f_poke:ActivePokemon<'battle, 'simulation>, 
         b_poke:ActivePokemon<'battle, 'simulation>) -> Self {
             let mut bs = BattleState::new();
@@ -675,8 +678,16 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     ) -> Option<BattleAction<'battle>> {
         if let Some(action) = self.action_queue.pop_front() {
             Some(action)
-        } else if let Some(speed_action) = self.speed_queue.pop_front() {
-            Some(speed_action.battle_action)
+        } else if !self.speed_queue.is_empty() {
+            // If speed_dirty flag, sort before returning
+            if self.speed_dirty_flag {
+                self.sort_speed_queue();
+            }
+            if let Some(speed_action) = self.speed_queue.pop_front() {
+                Some(speed_action.battle_action)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -692,6 +703,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             (sa.priority, self.get_active_pokemon_speed(sa.team_index))
         ));
         self.speed_queue = queue;
+        self.speed_dirty_flag = false;
     }
 
 
@@ -1544,11 +1556,37 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     /// Set weather on field
     fn exec_set_weather(&mut self, new_weather:BattleWeatherState, boosted_turns:bool) {
         
-        // Check if extreme sun/rain
+        let prev_weather = self.weather;
         self.weather = new_weather;
+        
         // TODO: extreme rain/sun never change, prob set to max u8
         let turns = if !boosted_turns {5} else {8};
         self.weather_turns = turns;
+
+        // Check abilities/items/field for weather effects
+        for field_pos in BattleState::FIELD_POS {
+            if let Some(act_poke) = self.get_active(field_pos) {
+                if let Some(on_weather_fn) 
+                = act_poke.trained_pokemon.ability.weather_change_fn {
+                    let ability_name = act_poke.trained_pokemon.ability.name;
+                    let move_effs = on_weather_fn(self, prev_weather);
+
+                    move_effs.into_iter().for_each(
+                        |move_eff| { 
+                            self.convert_move_eff_to_bat_action(&move_eff, field_pos, 
+                                None, 
+                                Some(DamageSource::Ability(ability_name))
+                            ).into_iter()
+                            .for_each(
+                                // TODO: Should trigger in speed order but the use-case is too small
+                                // Leaving as an option/flag for certain interactions
+                                |ba| {self.action_queue.push_back(ba);}
+                            );
+                        }
+                    );
+                }
+            }
+        }
     }
 
     /// Simulate damage step, creating multiple universes if damage range
@@ -1680,6 +1718,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     pub fn sim_action(&mut self, mut action:BattleAction) -> Vec<BattleContainer<'battle, 'simulation>> {
         // TODO: sort action queue
 
+        // If speed dirty & speed action, sort
+
         match action {
             BattleAction::Move(move_action) => {
                 let (can_perform, fail_message) = self.can_perform_move(&move_action.pkm_move, &move_action);
@@ -1759,6 +1799,11 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                     MoveEffect::SetWeather(new_weather) => {
                         // TODO: Check item for turn extension
                         self.exec_set_weather(new_weather, false);
+                        return vec![BattleContainer::one(self.clone(), None)]
+                    },
+                    MoveEffect::SpeedChangeFlag => {
+                        self.speed_dirty_flag = true;
+                        // self.sort_speed_queue();
                         return vec![BattleContainer::one(self.clone(), None)]
                     },
                     _ => {
@@ -1915,12 +1960,12 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             MoveEffect::ForcedReturn(_position) => {
                 BattleAction::Return(effect_target_pos)
             },
-            move_eff @ MoveEffect::SetWeather(..) => {
+            move_eff @ MoveEffect::SetWeather(..) |
+            move_eff @ MoveEffect::SpeedChangeFlag => {
                 BattleAction::Generic(*move_eff, effect_target_pos)
             },
             MoveEffect::Charge(..) | 
             MoveEffect::Damage(..) |
-            MoveEffect::SpeedChangeFlag |
             MoveEffect::Healing(.. ) => panic!("These should never hit here")
         }
     }
@@ -2077,7 +2122,14 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             team = &self.b_team;
         }
         let act_poke = team.get(team_index.index).unwrap();
-        let speed = act_poke.get_active_stat(PokemonStatName::SPEED);
+        let mut speed = act_poke.get_active_stat(PokemonStatName::SPEED) as f64;
+
+        if let Some(speed_mod_fn) = act_poke.trained_pokemon.ability.speed_modif_func {
+            if let Some(modifier) = speed_mod_fn(self, act_poke) {
+                speed *= modifier.float();
+            }
+        }
+
         // TODO: Check paralysis, Trick Room, etc
         speed as u32
     }
