@@ -1366,9 +1366,9 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 Tar Shot = Fire x2
              */
             
+            // Move damage modifier from Ability
             if let Some(ability_fn) = atk_poke.trained_pokemon.ability.move_damage_modifier {
-                let dmg = ability_fn(battle_state, atk_poke, def_poke, pkm_move);
-                if let Some(dmg_stat) = dmg {
+                if let Some(dmg_stat) = ability_fn(battle_state, atk_poke, def_poke, pkm_move) {
                     dmg_modifier_list.push_back(dmg_stat);
                 }
             }
@@ -1381,8 +1381,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
             // Burn check, or Guts
             // Other (In speed order), see https://bulbapedia.bulbagarden.net/wiki/Damage
-
-            // TODO: Add blaze/overgrow/etc
 
             let mut calc_dmg = base_damage;
             while let Some(modifier) = dmg_modifier_list.pop_front() {

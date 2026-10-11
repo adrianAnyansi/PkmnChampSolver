@@ -168,6 +168,70 @@ fn test_hospitality_heals_ally_one_eighth_on_send_out() {
 }
 
 #[test]
+fn test_drought_sets_sun_on_send_out() {
+    let drought: &'static PokemonAbility<'static> =
+        Box::leak(Box::new(make_ability(PokemonAbilityName::Drought)));
+    let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
+        get_pkmn(PokemonName::Charizard),
+        drought,
+        PokemonNature::Quirky,
+        None,
+    )));
+
+    let mut battle_state = BattleState::new();
+    let idx = battle_state.b_team.add_poke(ActivePokemon::new(trained_pokemon));
+    assert_eq!(battle_state.weather, BattleWeatherState::NONE);
+
+    battle_state.exec_send_out(FieldPosition::B1, idx, None);
+
+    let set_weather = battle_state
+        .speed_queue
+        .iter()
+        .find_map(|speed_action| match &speed_action.battle_action {
+            BattleAction::Generic(MoveEffect::SetWeather(weather), _) => {
+                Some(speed_action.battle_action.clone()).filter(|_| *weather == BattleWeatherState::SUN)
+            }
+            _ => None,
+        })
+        .expect("Drought should queue a SUN SetWeather action");
+
+    battle_state.sim_action(set_weather);
+    assert_eq!(battle_state.weather, BattleWeatherState::SUN);
+}
+
+#[test]
+fn test_sand_stream_sets_sandstorm_on_send_out() {
+    let sand_stream: &'static PokemonAbility<'static> =
+        Box::leak(Box::new(make_ability(PokemonAbilityName::Sand_Stream)));
+    let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
+        get_pkmn(PokemonName::Tyranitar),
+        sand_stream,
+        PokemonNature::Quirky,
+        None,
+    )));
+
+    let mut battle_state = BattleState::new();
+    let idx = battle_state.b_team.add_poke(ActivePokemon::new(trained_pokemon));
+    assert_eq!(battle_state.weather, BattleWeatherState::NONE);
+
+    battle_state.exec_send_out(FieldPosition::B1, idx, None);
+
+    let set_weather = battle_state
+        .speed_queue
+        .iter()
+        .find_map(|speed_action| match &speed_action.battle_action {
+            BattleAction::Generic(MoveEffect::SetWeather(BattleWeatherState::SANDSTORM), _) => {
+                Some(speed_action.battle_action.clone())
+            }
+            _ => None,
+        })
+        .expect("Sand Stream should queue a SANDSTORM SetWeather action");
+
+    battle_state.sim_action(set_weather);
+    assert_eq!(battle_state.weather, BattleWeatherState::SANDSTORM);
+}
+
+#[test]
 fn test_chlorophyll_reorders_speed_queue_after_sun_weather() {
     let nothing: &'static PokemonAbility<'static> =
         Box::leak(Box::new(make_ability(PokemonAbilityName::Nothing)));

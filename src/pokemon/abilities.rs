@@ -34,6 +34,7 @@ pub enum PokemonAbilityName {
     Flower_Veil,
     Symbiosis,
     Hospitality,
+    Drought,
     Heatproof,
     Flame_Body,
     Gale_Wings,
@@ -281,6 +282,22 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
                         MoveEffect::Healing(FieldTarget::ALLY, 
                             DamageAmount::HealthPct(PkmnRational::new(1, 8)))
                     ]
+                }
+            )
+        },
+        PokemonAbilityName::Sand_Stream => {
+            PokemonAbility::new(ably_name)
+            .add_enter_effect(
+                |_battle_state:&BattleState, _source:&ActivePokemon| {
+                    vec![MoveEffect::SetWeather(BattleWeatherState::SANDSTORM)]
+                }
+            )
+        },
+        PokemonAbilityName::Drought => {
+            PokemonAbility::new(ably_name)
+            .add_enter_effect(
+                |_battle_state:&BattleState, _source:&ActivePokemon| {
+                    vec![MoveEffect::SetWeather(BattleWeatherState::SUN)]
                 }
             )
         },
