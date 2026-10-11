@@ -417,6 +417,54 @@ fn test_sort_speed_queue_orders_faster_pokemon_first() {
 }
 
 #[test]
+fn test_get_num_valid_actions_prefers_action_queue() {
+    let mut bs = BattleState::simple(
+        ActivePokemon::quick(PokemonName::Tyranitar),
+        ActivePokemon::quick(PokemonName::Venusaur),
+    );
+    bs.action_queue.clear();
+    bs.speed_queue.clear();
+
+    bs.action_queue.push_back(BattleAction::Message("first".to_string()));
+    bs.action_queue.push_back(BattleAction::Message("second".to_string()));
+
+    assert_eq!(bs.get_num_valid_actions(), 1);
+}
+
+#[test]
+fn test_get_num_valid_actions_counts_matching_speed_queue_prefix() {
+    let mut bs = BattleState::simple(
+        ActivePokemon::quick(PokemonName::Tyranitar),
+        ActivePokemon::quick(PokemonName::Venusaur),
+    );
+    bs.action_queue.clear();
+    bs.speed_queue.clear();
+
+    let tyranitar = bs.get_active_team_idx(FieldPosition::F1).unwrap();
+    let venusaur = bs.get_active_team_idx(FieldPosition::B1).unwrap();
+
+    for (team_index, priority) in [
+        (venusaur, 4),
+        (venusaur, 4),
+        (tyranitar, 4),
+        (venusaur, 3),
+        (venusaur, 4),
+    ] {
+        bs.speed_queue.push_back(SpeedBattleAction {
+            priority,
+            team_index,
+            battle_action: BattleAction::Message("queued".to_string()),
+        });
+    }
+
+    assert_eq!(
+        bs.get_num_valid_actions(),
+        2,
+        "Only the contiguous front actions with the same speed and priority count",
+    );
+}
+
+#[test]
 fn test_weather_set_and_expire() {
     let mut bs = BattleState::simple(
         ActivePokemon::quick(PokemonName::Tyranitar), ActivePokemon::quick(Venusaur));

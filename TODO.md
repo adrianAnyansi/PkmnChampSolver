@@ -2,7 +2,10 @@
 
 Goal - all <12 pokemon, moves and abilities done
 Then a timed simulation and optimization
-I'm strudging forward
+
+I'm actually decently close- there are, 10-15 things done?
+Then speed/turn/mega mechanics
+Then the trainer stuff. It's possible
 
 ## Backlog/Put aside
 Turn 0 doesnt matter until trainer choice and turn mechanics work
@@ -10,16 +13,34 @@ Turn 0 doesnt matter until trainer choice and turn mechanics work
 ## Today
 --- 
 
+Speed order is getting done-
+I gotta put the priority as a flag as well for Gale Wings
+The plan is speed flag/priority flag sorts the speed order + moves correctly
+Then I dont gotta think about it anymore
+
+Annoying part is some times speed order doesn't get sorted until the end of certain actions, I just have to ignore this
+I don't have a way to push certain BAs to speed order (not moves) 
+
+Just realized because of Quash, After You, technically this makes speed order very weird... Now I gotta make a list of this
+
+Quash - Last in turn, multiple = speed order
+After You - Target moves immediately after pokemon
+Me First - Copies target move and uses it - Wait is this even in champions
+
+---
+
 Want to either do Drought/Sandstorm, but that relies on DamageEffect and end of turn generation, as well as tracking weather turns (weather memory)
 
 Also could do Sturdy due to damage calculation, which includes ability memory
 
 Also I can do Fairy Aura, which is just a move modifier
 
-
-For weather, I have no way of setting the weather by move/ability i think
+I could complete the Weather mechanics, and then go into the speed mechanics where I have to update/test speed order
 
 ## Ability notes
+
+
+
 For chlorophyll, I can put a flag to say "Check this on weather change"
 But whenever speed gets calculated, I gotta pull the modifier.
 So OnWeatherChange + SpeedModifier means engine has to recalc speed order.
@@ -61,7 +82,7 @@ Knock Off - Item mechanic
 Chlorophyll - Speed mechanic with instant change
 Flower Veil - Protect status
 Unburden - Item mechanic
-Gale Wings - Speed mechanic
+Gale Wings - Priority mechanic
 Sturdy - OnDamage from full, leave at 1HP, 
 Levitate - Ignore Ground moves
 

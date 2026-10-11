@@ -230,6 +230,7 @@ pub fn make_ability<'simulation>(ably_name: PokemonAbilityName) -> PokemonAbilit
                 }
             )
         },
+        // TODO: Add Torrent
         PokemonAbilityName::Chlorophyll => {
             PokemonAbility::new(ably_name)
             .add_weather_chg_effect(

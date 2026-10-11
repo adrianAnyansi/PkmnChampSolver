@@ -411,10 +411,12 @@ pub struct BattleState<'battle, 'simulation: 'battle> {
     pub internal_state: i32,
     // pub current_action: Option<String>,
     
-    // NOTE: If speed/ability/etc order is hard to order, create a different queue
+    /// NOTE: If speed/ability/etc order is hard to order, create a different queue
     pub action_queue: VecDeque<BattleAction<'battle>>,
-    // Speed ordered queue
+    /// Speed ordered queue
     pub speed_queue:VecDeque<SpeedBattleAction<'battle>>,
+    /// Speed queue is dirty (due to change of speed/priority) 
+    pub speed_dirty_flag: bool,
 
 
     /// Current battle turn number
@@ -451,6 +453,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             // current_action: None,
             action_queue: VecDeque::new(),
             speed_queue: VecDeque::new(),
+            speed_dirty_flag: false,
+
             turn_num: 0, // turn 0 is send out state
             action_num: 0,
             // Keep track of messages from actions/debug this frame
@@ -579,11 +583,11 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         
     }
 
-    pub fn queue_speed_action(&mut self, battle_action:BattleAction<'battle>) {
+    // pub fn queue_speed_action(&mut self, battle_action:BattleAction<'battle>) {
 
-        self.action_queue.push_back(battle_action);
-        // sort speed 
-    }
+    //     self.action_queue.push_back(battle_action);
+    //     // sort speed 
+    // }
 
     pub fn queue_pre_turn_switch(&mut self, 
         position:FieldPosition) {
@@ -602,32 +606,32 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
     }
 
     /// Queue move with current speed order
-    pub fn queue_move_with_speed (
-        &self,
-        speed_queue: &mut VecDeque<SpeedBattleAction<'battle>>,
-        source: FieldPosition,
-        pkm_move:&'battle PokemonMove,
-        targets:Vec<FieldPosition>, 
-        ) {
+    // pub fn queue_move_with_speed (
+    //     &self,
+    //     speed_queue: &mut VecDeque<SpeedBattleAction<'battle>>,
+    //     source: FieldPosition,
+    //     pkm_move:&'battle PokemonMove,
+    //     targets:Vec<FieldPosition>, 
+    //     ) {
 
-        let move_action: MoveAction = MoveAction{
-            source, targets, pkm_move
-        };
+    //     let move_action: MoveAction = MoveAction{
+    //         source, targets, pkm_move
+    //     };
 
-        // TODO: Better way to get reference
-        // let act_poke = self.get_active(source).unwrap();
-        let team_index = self.get_active_team_idx(source).unwrap();
-        let battle_action: BattleAction = BattleAction::Move(move_action);
+    //     // TODO: Better way to get reference
+    //     // let act_poke = self.get_active(source).unwrap();
+    //     let team_index = self.get_active_team_idx(source).unwrap();
+    //     let battle_action: BattleAction = BattleAction::Move(move_action);
         
-        let speed_action: SpeedBattleAction = SpeedBattleAction {
-            priority: get_move_priority(pkm_move),
-            // act_poke,
-            team_index,
-            battle_action
-        };
+    //     let speed_action: SpeedBattleAction = SpeedBattleAction {
+    //         priority: get_move_priority(pkm_move),
+    //         // act_poke,
+    //         team_index,
+    //         battle_action
+    //     };
 
-        speed_queue.push_back(speed_action);
-    }
+    //     speed_queue.push_back(speed_action);
+    // }
 
     pub fn queue_action_with_speed (
         &mut self,
@@ -635,19 +639,34 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         battle_action:BattleAction<'battle>,
         int_priority: Option<i8>
     ) {
-        // let mut speed_queue  = std::mem::take(&mut self.speed_queue);
         let priority = int_priority.unwrap_or(0);
+
+        // TODO: Move priority must be pulled from the ability+move
         
         self.speed_queue.push_back( SpeedBattleAction { 
             priority, team_index, battle_action }
         );
-        // self.speed_queue = speed_queue;
     }
 
     /// Get number of valid actions
-    pub fn get_num_valid_actions() -> u8 {
-        // TODO: Check for speed ties
-        1
+    pub fn get_num_valid_actions(&self) -> u8 {
+        if !self.action_queue.is_empty() {
+            return 1;
+        }
+
+        let Some(first_action) = self.speed_queue.front() else {
+            return 0;
+        };
+        let first_priority = first_action.priority;
+        let first_speed = self.get_active_pokemon_speed(first_action.team_index);
+
+        self.speed_queue
+            .iter()
+            .take_while(|action| {
+                action.priority == first_priority
+                    && self.get_active_pokemon_speed(action.team_index) == first_speed
+            })
+            .count() as u8
     }
 
     /// Pop next action for processing
