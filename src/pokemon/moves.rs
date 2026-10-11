@@ -797,8 +797,7 @@ pub fn get_move(pkmn_move_name:PokemonMoveName) -> PokemonMove {
         Heavy_Slam => PokemonMove::new(
             pkmn_move_name, STEEL, Physical
         ).set_power(0)
-        .add_dummy_flag("custom_power")
-        .add_dummy_flag("power based on weight"),
+        .add_flag(CUSTOM_POWER),
 
         High_Horsepower => PokemonMove::new(
             pkmn_move_name, GROUND, Physical
@@ -886,6 +885,7 @@ pub fn get_weather_modify_move(weather:BattleWeatherState, move_name:PokemonMove
 
 /// Get custom base_power based on current battle/etc
 pub fn get_custom_base_power(battle_state:&BattleState, source:&ActivePokemon, 
+    target: &ActivePokemon,
     move_name:PokemonMoveName) -> PokemonMove {
     match move_name {
         Stomping_Tantrum => {
@@ -894,6 +894,29 @@ pub fn get_custom_base_power(battle_state:&BattleState, source:&ActivePokemon,
             if source.last_move_failed {
                 base_move.power = 140;
             }
+            base_move
+        },
+        Heavy_Slam => {
+            let source_wght = source.trained_pokemon.pokemon.weight;
+            let tgt_wght = target.trained_pokemon.pokemon.weight;
+            // User weight as a multiple of the target's weight
+            let wght_ratio = source_wght / tgt_wght;
+
+            let base_power = if wght_ratio >= 5.0 {
+                120
+            } else if wght_ratio >= 4.0 {
+                100
+            } else if wght_ratio >= 3.0 {
+                80
+            } else if wght_ratio >= 2.0 {
+                60
+            } else {
+                40
+            };
+            // TODO: If target is minimized, multiply by 2
+
+            let mut base_move = get_move(move_name);
+            base_move.power = base_power;
             base_move
         },
         _ => panic!("Not implemented in custom_base_power")

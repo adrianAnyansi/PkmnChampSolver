@@ -743,6 +743,7 @@ impl<'battle> BattleState<'battle> {
     }
 
     /// Add a move to the action queue
+    #[deprecated = "Use queue_move_with_speed"]
     pub fn queue_move (
         action_queue: &mut VecDeque<BattleAction<'battle>>,
         source: FieldPosition,
@@ -1312,7 +1313,7 @@ impl<'battle> BattleState<'battle> {
                 
             }
             if pkm_move.flags.has_flag(PokemonMoveFlag::CUSTOM_POWER) {
-                effective_move = get_custom_base_power(battle_state, atk_poke, pkm_move.name);
+                effective_move = get_custom_base_power(battle_state, atk_poke, def_poke, pkm_move.name);
             }
             // let base_power = effective_move.power;
 

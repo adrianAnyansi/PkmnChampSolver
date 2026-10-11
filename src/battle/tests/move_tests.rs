@@ -398,3 +398,58 @@ fn test_parting_shot_stat_drop_then_user_returns() {
     assert_eq!(*target.get_active_stat_boost(ATTACK), PokemonStatModifier::MINUS_1);
     assert_eq!(*target.get_active_stat_boost(SPECIAL_ATTACK), PokemonStatModifier::MINUS_1);
 }
+
+/// Typeless Pokemon so Heavy Slam (Steel) gets neither STAB nor type effectiveness
+fn typeless_pokemon(weight: f64) -> &'static crate::pokemon::Pokemon {
+    Box::leak(Box::new(crate::pokemon::Pokemon {
+        name: PokemonName::Garchomp,
+        base_stats: crate::pokemon::get_pkmn(PokemonName::Garchomp).base_stats.clone(),
+        abilities: vec![],
+        learnset: vec![],
+        weight,
+        types: vec![PokemonType::TYPELESS],
+    }))
+}
+
+/// Run Heavy Slam from a fixed-weight attacker into a target of `target_weight`
+fn heavy_slam_damage(attacker_weight: f64, target_weight: f64) -> i32 {
+    use crate::battle::data::TrainedPokemon;
+    use crate::pokemon::abilities::{get_ability, PokemonAbilityName};
+    use crate::pokemon::poke_stat::PokemonNature;
+
+    let new_trained = |weight: f64| Box::leak(Box::new(TrainedPokemon::new(
+        typeless_pokemon(weight),
+        get_ability(PokemonAbilityName::Nothing),
+        PokemonNature::Quirky,
+        None,
+    )));
+    let attacker = ActivePokemon::new(new_trained(attacker_weight));
+    let target = ActivePokemon::new(new_trained(target_weight));
+    let mut bs = BattleState::simple(target, attacker);
+
+    let heavy_slam = get_move(PokemonMoveName::Heavy_Slam);
+    BattleState::queue_move(
+        &mut bs.action_queue,
+        FieldPosition::B1,
+        &heavy_slam,
+        vec![FieldPosition::F1],
+    );
+
+    let mut bc = BattleContainer::simple(bs, PkmnRational::ONE());
+    bc.sim_next_action();
+    match bc.battle_state.as_ref().unwrap().action_queue.front().unwrap() {
+        BattleAction::Damage(effect) => effect.calc_damage,
+        action => panic!("expected Heavy Slam to queue damage, got {action}"),
+    }
+}
+
+#[test]
+fn test_heavy_slam_damage_scales_with_weight_ratio() {
+    let attacker_weight = 100.0;
+    let light_target_damage = heavy_slam_damage(attacker_weight, 10.0);
+    let heavy_target_damage = heavy_slam_damage(attacker_weight, 100.0);
+
+    assert!(light_target_damage > 0 && heavy_target_damage > 0);
+    assert!(light_target_damage > heavy_target_damage,
+        "Heavy Slam should hit a light target ({light_target_damage}) harder than a heavy one ({heavy_target_damage})");
+}
