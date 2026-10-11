@@ -8,38 +8,39 @@ use crate::pokemon::moves::{get_move, get_move_priority, MoveEffect, PokemonMove
 use crate::pokemon::poke_stat::{PokemonNature, PokemonStatName};
 use crate::pokemon::types::PokemonType;
 use crate::pokemon::{get_pkmn, Pokemon, PokemonName};
+use std::sync::LazyLock;
 
-fn neutral_target() -> ActivePokemon<'static> {
-    let pokemon = Box::leak(Box::new(Pokemon {
-        name: PokemonName::Venusaur,
-        base_stats: get_pkmn(PokemonName::Venusaur).base_stats.clone(),
-        abilities: vec![],
-        learnset: vec![],
-        weight: 100.0,
-        types: vec![PokemonType::TYPELESS],
-    }));
-    let ability = get_ability(PokemonAbilityName::Nothing);
-    let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
-        pokemon,
-        ability,
+static NEUTRAL_POKEMON: LazyLock<Pokemon> = LazyLock::new(|| Pokemon {
+    name: PokemonName::Venusaur,
+    base_stats: get_pkmn(PokemonName::Venusaur).base_stats.clone(),
+    abilities: vec![],
+    learnset: vec![],
+    weight: 100.0,
+    types: vec![PokemonType::TYPELESS],
+});
+
+/// Typeless target; the caller owns the TrainedPokemon so ActivePokemon can borrow it
+fn neutral_trained() -> TrainedPokemon<'static> {
+    TrainedPokemon::new(
+        &NEUTRAL_POKEMON,
+        get_ability(PokemonAbilityName::Nothing),
         PokemonNature::Quirky,
         None,
-    )));
-
-    ActivePokemon::new(trained_pokemon)
+    )
 }
 
 #[test]
 fn test_blaze_boosts_second_fire_move_below_one_third_hp() {
-    let target = neutral_target();
+    let trained_target = neutral_trained();
+    let target = ActivePokemon::new(&trained_target);
     let blaze = get_ability(PokemonAbilityName::Blaze);
-    let trained_charizard = Box::leak(Box::new(TrainedPokemon::new(
+    let trained_charizard = TrainedPokemon::new(
         get_pkmn(PokemonName::Charizard),
         blaze,
         PokemonNature::Quirky,
         None,
-    )));
-    let charizard = ActivePokemon::new(trained_charizard);
+    );
+    let charizard = ActivePokemon::new(&trained_charizard);
     let mut battle_state = BattleState::simple(target, charizard);
 
     let mut fire_move = get_move(PokemonMoveName::Heat_Wave);
@@ -106,14 +107,12 @@ fn test_exec_set_team_intimidate_queued_in_speed_queue() {
 
     let nothing = get_ability(PokemonAbilityName::Nothing);
     let intimidate = get_ability(PokemonAbilityName::Intimidate);
-    let front: &'static TrainedPokemon<'static> = Box::leak(Box::new(
-        TrainedPokemon::new(get_pkmn(PokemonName::Tyranitar), nothing, PokemonNature::Quirky, None)));
-    let back: &'static TrainedPokemon<'static> = Box::leak(Box::new(
-        TrainedPokemon::new(get_pkmn(PokemonName::Charizard), intimidate, PokemonNature::Quirky, None)));
+    let front = TrainedPokemon::new(get_pkmn(PokemonName::Tyranitar), nothing, PokemonNature::Quirky, None);
+    let back = TrainedPokemon::new(get_pkmn(PokemonName::Charizard), intimidate, PokemonNature::Quirky, None);
 
     let mut bs = BattleState::new();
-    bs.exec_set_team(BattleTeamSide::FRONT, &vec![front]);
-    bs.exec_set_team(BattleTeamSide::BACK, &vec![back]);
+    bs.exec_set_team(BattleTeamSide::FRONT, &vec![&front]);
+    bs.exec_set_team(BattleTeamSide::BACK, &vec![&back]);
 
     assert_eq!(bs.speed_queue.len(), 2, "Intimidate queued for both opponents");
     let queued = bs.speed_queue.front().unwrap();
@@ -141,15 +140,15 @@ fn test_hospitality_heals_ally_one_eighth_on_send_out() {
     b1.current_hp = max_hp / 2;
 
     let hospitality = get_ability(PokemonAbilityName::Hospitality);
-    let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
+    let trained_pokemon = TrainedPokemon::new(
         get_pkmn(PokemonName::Charizard),
         hospitality,
         PokemonNature::Quirky,
         None,
-    )));
+    );
     let hospitality_idx = battle_state
         .b_team
-        .add_poke(ActivePokemon::new(trained_pokemon));
+        .add_poke(ActivePokemon::new(&trained_pokemon));
     battle_state.exec_send_out(FieldPosition::B2, hospitality_idx, None);
 
     let heal = battle_state
@@ -168,15 +167,15 @@ fn test_hospitality_heals_ally_one_eighth_on_send_out() {
 #[test]
 fn test_drought_sets_sun_on_send_out() {
     let drought = get_ability(PokemonAbilityName::Drought);
-    let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
+    let trained_pokemon = TrainedPokemon::new(
         get_pkmn(PokemonName::Charizard),
         drought,
         PokemonNature::Quirky,
         None,
-    )));
+    );
 
     let mut battle_state = BattleState::new();
-    let idx = battle_state.b_team.add_poke(ActivePokemon::new(trained_pokemon));
+    let idx = battle_state.b_team.add_poke(ActivePokemon::new(&trained_pokemon));
     assert_eq!(battle_state.weather, BattleWeatherState::NONE);
 
     battle_state.exec_send_out(FieldPosition::B1, idx, None);
@@ -199,15 +198,15 @@ fn test_drought_sets_sun_on_send_out() {
 #[test]
 fn test_sand_stream_sets_sandstorm_on_send_out() {
     let sand_stream = get_ability(PokemonAbilityName::Sand_Stream);
-    let trained_pokemon = Box::leak(Box::new(TrainedPokemon::new(
+    let trained_pokemon = TrainedPokemon::new(
         get_pkmn(PokemonName::Tyranitar),
         sand_stream,
         PokemonNature::Quirky,
         None,
-    )));
+    );
 
     let mut battle_state = BattleState::new();
-    let idx = battle_state.b_team.add_poke(ActivePokemon::new(trained_pokemon));
+    let idx = battle_state.b_team.add_poke(ActivePokemon::new(&trained_pokemon));
     assert_eq!(battle_state.weather, BattleWeatherState::NONE);
 
     battle_state.exec_send_out(FieldPosition::B1, idx, None);
@@ -232,22 +231,22 @@ fn test_chlorophyll_reorders_speed_queue_after_sun_weather() {
     let nothing = get_ability(PokemonAbilityName::Nothing);
     let chlorophyll = get_ability(PokemonAbilityName::Chlorophyll);
 
-    let charizard = Box::leak(Box::new(TrainedPokemon::new(
+    let charizard = TrainedPokemon::new(
         get_pkmn(PokemonName::Charizard),
         nothing,
         PokemonNature::Quirky,
         None,
-    )));
-    let venusaur = Box::leak(Box::new(TrainedPokemon::new(
+    );
+    let venusaur = TrainedPokemon::new(
         get_pkmn(PokemonName::Venusaur),
         chlorophyll,
         PokemonNature::Quirky,
         None,
-    )));
+    );
 
     let mut battle_state = BattleState::simple(
-        ActivePokemon::new(charizard),
-        ActivePokemon::new(venusaur),
+        ActivePokemon::new(&charizard),
+        ActivePokemon::new(&venusaur),
     );
 
     let charizard_move = get_move(PokemonMoveName::Flare_Blitz);
@@ -311,13 +310,13 @@ fn test_rough_skin_damages_attacker_one_eighth_after_move_damage() {
     use crate::pokemon::poke_stat::PokemonStatName;
 
     let rough_skin = get_ability(PokemonAbilityName::Rough_Skin);
-    let trained_garchomp = Box::leak(Box::new(TrainedPokemon::new(
+    let trained_garchomp = TrainedPokemon::new(
         get_pkmn(PokemonName::Garchomp),
         rough_skin,
         PokemonNature::Quirky,
         None,
-    )));
-    let garchomp = ActivePokemon::new(trained_garchomp);
+    );
+    let garchomp = ActivePokemon::new(&trained_garchomp);
     let tyranitar = ActivePokemon::quick(PokemonName::Tyranitar);
     let mut battle_state = BattleState::simple(tyranitar, garchomp);
 
