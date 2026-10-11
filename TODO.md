@@ -13,22 +13,7 @@ Turn 0 doesnt matter until trainer choice and turn mechanics work
 ## Today
 --- 
 
-Speed order is getting done-
-
-I need the speed flag to call the speed sort function
-Leaving the priority ability stuff for Gale Wings implementation
-
-With speed queue done, I can put the Chlorophyll test 
-
-Btw my solution for:
-Quash- Put a flag, and sort in the queue
-After You- Override speed order, and since a speed change can't occur before the next move, should be fine.
-
-
-I gotta put the priority as a flag as well for Gale Wings
-The plan is speed flag/priority flag sorts the speed order + moves correctly
-Then I dont gotta think about it anymore
-
+Drought/Sandstorm now
 
 ---
 
@@ -42,37 +27,8 @@ I could complete the Weather mechanics, and then go into the speed mechanics whe
 
 ## Ability notes
 
-
-
-For chlorophyll, I can put a flag to say "Check this on weather change"
-But whenever speed gets calculated, I gotta pull the modifier.
-So OnWeatherChange + SpeedModifier means engine has to recalc speed order.
-
-So it would be great to make an event that says "speed change occurred". That itself could be a MoveEffect that I can generate on change, but requires memory, which I don't want as it complicates things
-
-Also realised I cant check speed prior to running things, because onWeatherChange has already changed the speed.
-
-AI says the ability sets a dirty flag basically- this is similar to what I was thinking about raising an event. So the speed check can remain stateless, but onWeather contains the previous -> new state and knows whether a change occurred.
-Going forward with that... 
-
-Forgot that in order to test this, I need to set weather & I need to set weather turns too, I also don't quite have turn logic 100% so I need another test for that
-
-Ok I forgot that weather needs to check item- similar to screens
-So I need the battleaction/etc to hold the source position
-
----
-
-Ok lets think- for chrolophyll it can activate onEnter same as weather change. For retrieving the value & multiplier, i have the damage modifier method to use, but something like unburden needs a flag thats reset on certain values/situations.
-For example, Unburden gets a boost thats applied after base but before stat mult, but I don't want a constant check of ability speed every time- any other stat which should sit on the pokemon (like grass seed)
-
-
-## Ability memory
-
-Here's the solution to stuff like Disguise, Unburden, etc
-In ActivePokemon I'll have votalite + non volatile memory
-This way the ability can store memory without needing to worry about location/per ability memory
-
-However 
+OnEnter needs to activate multiple other functions, kinda hard to do though since I cant dynamically call them
+OnWeatherChange
 
 
 ## Moves to implement
@@ -82,7 +38,6 @@ Heavy Slam - Weight for base power
 Knock Off - Item mechanic
 
 ## Abilities to implement
-Chlorophyll - Speed mechanic with instant change
 Flower Veil - Protect status
 Unburden - Item mechanic
 Gale Wings - Priority mechanic

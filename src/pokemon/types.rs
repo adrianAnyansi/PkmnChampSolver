@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde::{Deserializer};
+use crate::math::PkmnRational;
 
 /// Pokemon Type
 #[allow(dead_code)]
@@ -83,188 +84,105 @@ impl core::fmt::Display for PokemonType {
     }
 }
 
-const SUPER_EFFECTIVE:f64 = 2f64;
-const NOT_EFFECTIVE:f64 = 0.5f64;
-const IMMUNE:f64 = 0f64;
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[allow(non_camel_case_types)]
+pub enum PkmnTypeEffectiveness {
+    SUPER_EFFECTIVE,
+    NOT_EFFECTIVE,
+    IMMUNE,
+    REG_EFFECTIVE,
+}
 
-/// Contains the type advantages of the game. Will be converted into 
-/// a sparse array at runtime for lookup
-const TYPE_CHART_ARRAY: [f64; 18*18] = { 
+impl PkmnTypeEffectiveness {
+    pub fn get_rat(self) -> PkmnRational {
+        match self {
+            Self::SUPER_EFFECTIVE => PkmnRational::new(2, 1),
+            Self::NOT_EFFECTIVE => PkmnRational::HALF(),
+            Self::IMMUNE => PkmnRational::ZERO(),
+            Self::REG_EFFECTIVE => PkmnRational::ONE(),
+        }
+    }
+}
+
+/// Contains the type advantages of the game in a two-dimensional lookup table.
+const TYPE_CHART_ARRAY: [[PkmnTypeEffectiveness; 18]; 18] = {
     use PokemonType::*;
+    use PkmnTypeEffectiveness::*;
     
-    // TODO: Use an array of normal
-    const TUPLE_ARR: [(PokemonType, PokemonType, f64); 138] = [
-        // Normal attacking
-        (NORMAL, ROCK, NOT_EFFECTIVE),
-        (NORMAL, STEEL, NOT_EFFECTIVE),
-        (NORMAL, GHOST, IMMUNE),
-        // FIRE attacking
-        (FIRE, FIRE, NOT_EFFECTIVE),
-        (FIRE, ROCK, NOT_EFFECTIVE),
-        (FIRE, WATER, NOT_EFFECTIVE),
-        (FIRE, DRAGON, NOT_EFFECTIVE),
-        (FIRE, GRASS, SUPER_EFFECTIVE),
-        (FIRE, BUG, SUPER_EFFECTIVE),
-        (FIRE, STEEL, SUPER_EFFECTIVE),
-        (FIRE, ICE, SUPER_EFFECTIVE),
-        // Bug attacking
-        (BUG, GRASS, SUPER_EFFECTIVE),
-        (BUG, PSYCHIC, SUPER_EFFECTIVE),
-        (BUG, DARK, SUPER_EFFECTIVE),
-        (BUG, FIRE, NOT_EFFECTIVE),
-        (BUG, FIGHTING, NOT_EFFECTIVE),
-        (BUG, FLYING, NOT_EFFECTIVE),
-        (BUG, GHOST, NOT_EFFECTIVE),
-        (BUG, STEEL, NOT_EFFECTIVE),
-        (BUG, FAIRY, NOT_EFFECTIVE),
+    const TUPLE_ARR: &[(PokemonType, PkmnTypeEffectiveness, &[PokemonType])] = &[
+        (NORMAL, NOT_EFFECTIVE, &[ROCK, STEEL]),
+        (NORMAL, IMMUNE, &[GHOST]),
 
-        // Flying
-        (FLYING, FIGHTING, SUPER_EFFECTIVE),
-        (FLYING, GRASS, SUPER_EFFECTIVE),
-        (FLYING, BUG, SUPER_EFFECTIVE),
-        (FLYING, ELECTRIC, NOT_EFFECTIVE),
-        (FLYING, ROCK, NOT_EFFECTIVE),
-        (FLYING, STEEL, NOT_EFFECTIVE),
-        // Ground
-        (GROUND, FLYING, IMMUNE),
-        (GROUND, POISON, SUPER_EFFECTIVE),
-        (GROUND, ROCK, SUPER_EFFECTIVE),
-        (GROUND, FIRE, SUPER_EFFECTIVE),
-        (GROUND, ELECTRIC, SUPER_EFFECTIVE),
-        (GROUND, STEEL, SUPER_EFFECTIVE),
-        (GROUND, BUG, NOT_EFFECTIVE),
-        (GROUND, GRASS, NOT_EFFECTIVE),
-        // Steel
-        (STEEL, STEEL, NOT_EFFECTIVE),
-        (STEEL, FIRE, NOT_EFFECTIVE),
-        (STEEL, WATER, NOT_EFFECTIVE),
-        (STEEL, ELECTRIC, NOT_EFFECTIVE),
-        (STEEL, ICE, SUPER_EFFECTIVE),
-        (STEEL, ROCK, SUPER_EFFECTIVE),
-        (STEEL, FAIRY, SUPER_EFFECTIVE),
-        // Fighting
-        (FIGHTING, NORMAL, SUPER_EFFECTIVE),
-        (FIGHTING, ROCK, SUPER_EFFECTIVE),
-        (FIGHTING, ICE, SUPER_EFFECTIVE),
-        (FIGHTING, STEEL, SUPER_EFFECTIVE),
-        (FIGHTING, DARK, SUPER_EFFECTIVE),
+        (FIRE, NOT_EFFECTIVE, &[FIRE, ROCK, WATER, DRAGON]),
+        (FIRE, SUPER_EFFECTIVE, &[GRASS, BUG, STEEL, ICE]),
+
+        (BUG, SUPER_EFFECTIVE, &[GRASS, PSYCHIC, DARK]),
+        (BUG, NOT_EFFECTIVE, &[FIRE, FIGHTING, FLYING, GHOST, STEEL, FAIRY, ROCK, POISON]),
+
+        (FLYING, SUPER_EFFECTIVE, &[FIGHTING, GRASS, BUG]),
+        (FLYING, NOT_EFFECTIVE, &[ELECTRIC, ROCK, STEEL]),
+
+        (GROUND, IMMUNE, &[FLYING]),
+        (GROUND, SUPER_EFFECTIVE, &[POISON, ROCK, FIRE, ELECTRIC, STEEL]),
+        (GROUND, NOT_EFFECTIVE, &[BUG, GRASS]),
+
+        (STEEL, NOT_EFFECTIVE, &[STEEL, FIRE, WATER, ELECTRIC]),
+        (STEEL, SUPER_EFFECTIVE, &[ICE, ROCK, FAIRY]),
         
-        (FIGHTING, FLYING, NOT_EFFECTIVE),
-        (FIGHTING, POISON, NOT_EFFECTIVE),
-        (FIGHTING, BUG, NOT_EFFECTIVE),
-        (FIGHTING, PSYCHIC, NOT_EFFECTIVE),
-        (FIGHTING, FAIRY, NOT_EFFECTIVE),
-        (FIGHTING, GHOST, IMMUNE),
-
-        // Poison
-        (POISON, GRASS, SUPER_EFFECTIVE),
-        (POISON, FAIRY, SUPER_EFFECTIVE),
-        (POISON, POISON, NOT_EFFECTIVE),
-        (POISON, GROUND, NOT_EFFECTIVE),
-        (POISON, ROCK, NOT_EFFECTIVE),
-        (POISON, GHOST, NOT_EFFECTIVE),        
-        (POISON, STEEL, IMMUNE),
-
-        (ROCK, FLYING, SUPER_EFFECTIVE),
-        (ROCK, BUG, SUPER_EFFECTIVE),
-        (ROCK, FIRE, SUPER_EFFECTIVE),
-        (ROCK, ICE, SUPER_EFFECTIVE),
-        (ROCK, FIGHTING, NOT_EFFECTIVE),
-        (ROCK, GROUND, NOT_EFFECTIVE),
-        (ROCK, STEEL, NOT_EFFECTIVE),
-
-        (BUG, PSYCHIC, SUPER_EFFECTIVE),
-        (BUG, DARK, SUPER_EFFECTIVE),
-        (BUG, GRASS, SUPER_EFFECTIVE),
-        (BUG, ROCK, NOT_EFFECTIVE),
-        (BUG, STEEL, NOT_EFFECTIVE),
-        (BUG, FIGHTING, NOT_EFFECTIVE),
-        (BUG, FLYING, NOT_EFFECTIVE),
-        (BUG, FIRE, NOT_EFFECTIVE),
-        (BUG, FAIRY, NOT_EFFECTIVE),
-        (BUG, GHOST, NOT_EFFECTIVE),
-        (BUG, POISON, NOT_EFFECTIVE),
-
-        (GHOST, GHOST, SUPER_EFFECTIVE),
-        (GHOST, PSYCHIC, SUPER_EFFECTIVE),
-        (GHOST, DARK, NOT_EFFECTIVE),
-        (GHOST, NORMAL, IMMUNE),
-
-        (FIRE, FIRE, NOT_EFFECTIVE),
-        (FIRE, ROCK, NOT_EFFECTIVE),
-        (FIRE, WATER, NOT_EFFECTIVE),
-        (FIRE, DRAGON, NOT_EFFECTIVE),
-        (FIRE, BUG, SUPER_EFFECTIVE),
-        (FIRE, GRASS, SUPER_EFFECTIVE),
-        (FIRE, ICE, SUPER_EFFECTIVE),
-        (FIRE, STEEL, SUPER_EFFECTIVE),
-
-        (WATER, DRAGON, NOT_EFFECTIVE),
-        (WATER, ELECTRIC, NOT_EFFECTIVE),
-        (WATER, GRASS, NOT_EFFECTIVE),
-        (WATER, ROCK, SUPER_EFFECTIVE),
-        (WATER, GROUND, SUPER_EFFECTIVE),
-        (WATER, FIRE, SUPER_EFFECTIVE),
-
-        (GRASS, DRAGON, NOT_EFFECTIVE),
-        (GRASS, BUG, NOT_EFFECTIVE),
-        (GRASS, FLYING, NOT_EFFECTIVE),
-        (GRASS, POISON, NOT_EFFECTIVE),
-        (GRASS, STEEL, NOT_EFFECTIVE),
-        (GRASS, GRASS, NOT_EFFECTIVE),
-        (GRASS, FIRE, NOT_EFFECTIVE),
-        (GRASS, ROCK, SUPER_EFFECTIVE),
-        (GRASS, GROUND, SUPER_EFFECTIVE),
-        (GRASS, WATER, SUPER_EFFECTIVE),
-
-        (ELECTRIC, GRASS, NOT_EFFECTIVE),
-        (ELECTRIC, DRAGON, NOT_EFFECTIVE),
-        (ELECTRIC, ELECTRIC, NOT_EFFECTIVE),
-        (ELECTRIC, GROUND, IMMUNE),
-        (ELECTRIC, WATER, SUPER_EFFECTIVE),
-        (ELECTRIC, FLYING, SUPER_EFFECTIVE),
+        (FIGHTING, SUPER_EFFECTIVE, &[NORMAL, ROCK, ICE, STEEL, DARK]),
+        (FIGHTING, NOT_EFFECTIVE, &[FLYING, POISON, BUG, PSYCHIC, FAIRY]),
+        (FIGHTING, IMMUNE, &[GHOST]),
         
-        (PSYCHIC, PSYCHIC, NOT_EFFECTIVE),
-        (PSYCHIC, STEEL, NOT_EFFECTIVE),
-        (PSYCHIC, DARK, IMMUNE),
-        (PSYCHIC, FIGHTING, SUPER_EFFECTIVE),
-        (PSYCHIC, POISON, SUPER_EFFECTIVE),
+        (POISON, SUPER_EFFECTIVE, &[GRASS, FAIRY]),
+        (POISON, NOT_EFFECTIVE, &[POISON, GROUND, ROCK, GHOST]),
+        (POISON, IMMUNE, &[STEEL]),
 
-        (ICE, WATER, NOT_EFFECTIVE),
-        (ICE, FIRE, NOT_EFFECTIVE),
-        (ICE, STEEL, NOT_EFFECTIVE),
-        (ICE, ICE, NOT_EFFECTIVE),
-        (ICE, FLYING, SUPER_EFFECTIVE),
-        (ICE, GRASS, SUPER_EFFECTIVE),
-        (ICE, ROCK, SUPER_EFFECTIVE),
-        (ICE, DRAGON, SUPER_EFFECTIVE),
+        (ROCK, SUPER_EFFECTIVE, &[FLYING, BUG, FIRE, ICE]),
+        (ROCK, NOT_EFFECTIVE, &[FIGHTING, GROUND, STEEL]),
 
-        (DRAGON, STEEL, NOT_EFFECTIVE),
-        (DRAGON, DRAGON, SUPER_EFFECTIVE),
-        (DRAGON, FAIRY, IMMUNE),
+        (GHOST, SUPER_EFFECTIVE, &[GHOST, PSYCHIC]),
+        (GHOST, NOT_EFFECTIVE, &[DARK]),
+        (GHOST, IMMUNE, &[NORMAL]),
 
-        (DARK, FIGHTING, NOT_EFFECTIVE),
-        (DARK, DARK, NOT_EFFECTIVE),
-        (DARK, FAIRY, NOT_EFFECTIVE),
-        (DARK, PSYCHIC, SUPER_EFFECTIVE),
-        (DARK, GHOST, SUPER_EFFECTIVE),
+        (WATER, NOT_EFFECTIVE, &[DRAGON, ELECTRIC, GRASS]),
+        (WATER, SUPER_EFFECTIVE, &[ROCK, GROUND, FIRE]),
 
-        (FAIRY, FIRE, NOT_EFFECTIVE),
-        (FAIRY, STEEL, NOT_EFFECTIVE),
-        (FAIRY, POISON, NOT_EFFECTIVE),
-        (FAIRY, DRAGON, SUPER_EFFECTIVE),
-        (FAIRY, FIGHTING, SUPER_EFFECTIVE),
-        (FAIRY, DARK, SUPER_EFFECTIVE),
+        (GRASS, NOT_EFFECTIVE, &[DRAGON, BUG, FLYING, POISON, STEEL, GRASS, FIRE]),
+        (GRASS, SUPER_EFFECTIVE, &[ROCK, GROUND, WATER]),
+
+        (ELECTRIC, NOT_EFFECTIVE, &[GRASS, DRAGON, ELECTRIC]),
+        (ELECTRIC, IMMUNE, &[GROUND]),
+        (ELECTRIC, SUPER_EFFECTIVE, &[WATER, FLYING]),
+
+        (PSYCHIC, NOT_EFFECTIVE, &[PSYCHIC, STEEL]),
+        (PSYCHIC, IMMUNE, &[DARK]),
+        (PSYCHIC, SUPER_EFFECTIVE, &[FIGHTING, POISON]),
+
+        (ICE, NOT_EFFECTIVE, &[WATER, FIRE, STEEL, ICE]),
+        (ICE, SUPER_EFFECTIVE, &[FLYING, GRASS, ROCK, DRAGON]),
+
+        (DRAGON, NOT_EFFECTIVE, &[STEEL]),
+        (DRAGON, SUPER_EFFECTIVE, &[DRAGON]),
+        (DRAGON, IMMUNE, &[FAIRY]),
+
+        (DARK, NOT_EFFECTIVE, &[FIGHTING, DARK, FAIRY]),
+        (DARK, SUPER_EFFECTIVE, &[PSYCHIC, GHOST]),
+
+        (FAIRY, NOT_EFFECTIVE, &[FIRE, STEEL, POISON]),
+        (FAIRY, SUPER_EFFECTIVE, &[DRAGON, FIGHTING, DARK]),
     ];
 
-    let mut arr: [f64; 324] = [1f64; 18*18];
+    let mut arr = [[REG_EFFECTIVE; 18]; 18];
 
     let mut iter = 0;
 
     while iter < TUPLE_ARR.len() {
-        let (type_atk, type_def, mult) = TUPLE_ARR[iter];
-        let hash_idx = type_hash_func(type_atk, type_def);
-        arr[hash_idx] = mult;
+        let (type_atk, effectiveness, type_defs) = TUPLE_ARR[iter];
+        let mut def_iter = 0;
+        while def_iter < type_defs.len() {
+            arr[type_atk as usize][type_defs[def_iter] as usize] = effectiveness;
+            def_iter += 1;
+        }
         iter += 1;
     }
 
@@ -272,41 +190,58 @@ const TYPE_CHART_ARRAY: [f64; 18*18] = {
 
 };
 
-/// used to get the multipler for type matchups
-const fn type_hash_func(type_atk:PokemonType, type_def:PokemonType) -> usize {
-    let hash_idx = (type_atk as i32) * 18 + (type_def as i32);
-    return hash_idx as usize;
-}
-
 /// get the type multipler for an attacking->defending type
-pub fn get_type_multipler(type_atk:PokemonType, type_def:PokemonType) -> f64 {
-    let mult = TYPE_CHART_ARRAY[type_hash_func(type_atk, type_def)];
-    mult
+pub fn get_type_multipler(type_atk:PokemonType, type_def:PokemonType) -> PkmnTypeEffectiveness {
+    if [type_atk, type_def].contains(&PokemonType::TYPELESS) {
+        return PkmnTypeEffectiveness::REG_EFFECTIVE
+    } 
+    TYPE_CHART_ARRAY[type_atk as usize][type_def as usize]
 }
 
 #[cfg(test)]
 mod tests {
 
     use crate::pokemon::types::*;
+    use PkmnTypeEffectiveness::*;
     
     #[test]
     fn test_type_multiplier () {
+        assert_eq!(
+            get_type_multipler(PokemonType::NORMAL, PokemonType::NORMAL),
+            REG_EFFECTIVE
+        );
         
         let type_a = PokemonType::BUG;
         let type_b = PokemonType::FLYING;
         
         let type_result = get_type_multipler(type_a, type_b);
-        assert_eq!(type_result, 0.5);
+        assert_eq!(type_result, NOT_EFFECTIVE);
 
         assert_eq!(
             get_type_multipler(PokemonType::GROUND, 
                 PokemonType::ELECTRIC),
-            2.0
+            SUPER_EFFECTIVE
         );
         assert_eq!(
             get_type_multipler(PokemonType::GROUND, 
                 PokemonType::FLYING),
-            0.0
+            IMMUNE
         )
+    }
+
+    #[test]
+    fn typeless_attack_is_regular_effective() {
+        assert_eq!(
+            get_type_multipler(PokemonType::TYPELESS, PokemonType::FIRE),
+            REG_EFFECTIVE
+        );
+    }
+
+    #[test]
+    fn typeless_defender_is_regular_effective() {
+        assert_eq!(
+            get_type_multipler(PokemonType::FIRE, PokemonType::TYPELESS),
+            REG_EFFECTIVE
+        );
     }
 }

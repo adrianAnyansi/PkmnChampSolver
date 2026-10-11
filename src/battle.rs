@@ -23,15 +23,14 @@ use strum_macros::Display;
 use crate::battle;
 use crate::battle::DamageAfterEffectEnum::Drain;
 use crate::battle::data::{ActivePokemon, ActiveTeam, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, TrainedPokemon, VolatileEnums};
-use crate::pokemon::moves::DamageTiming::RECOIL;
-use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT, PROTECT_ACC, RECOIL_1_3RD, RECOIL_1_4TH};
+use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT_ACC};
 use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, DamageAmount, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_move_priority, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
-use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_round}; 
+use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_floor};
 use crate::pokemon::abilities::PokemonAbilityName;
 use crate::pokemon::{self, Pokemon, moves::{BattlePreAction, FieldTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
-use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::{PokemonType, get_type_multipler}};
+use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::PokemonType};
 use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
 
 
@@ -546,7 +545,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         let true_index = TeamIndex { team_side: position.get_team(), index: team_index };
         // separate cause of mutable borrow
         let effects: Vec<MoveEffect> = match self.get_active(position) {
-            Some(act_poke) => match act_poke.trained_pokemon.ability.enter_fn {
+            Some(act_poke) => match act_poke.trained_pokemon.ability.on_enter_fn {
                 Some(enter_fn) => enter_fn(self, act_poke),
                 None => Vec::new(),
             },
@@ -585,12 +584,6 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
         *field_index_ref = None;
         
     }
-
-    // pub fn queue_speed_action(&mut self, battle_action:BattleAction<'battle>) {
-
-    //     self.action_queue.push_back(battle_action);
-    //     // sort speed 
-    // }
 
     pub fn queue_pre_turn_switch(&mut self, 
         position:FieldPosition) {
@@ -1337,11 +1330,11 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
             // ------------
             
-            let mut dmg_modifier_list:VecDeque<f64> = VecDeque::new();
+            let mut dmg_modifier_list:VecDeque<PkmnRational> = VecDeque::new();
 
             // Multi-Targets (x0.75 in doubles)
             if num_valid_targets > 1 {
-                dmg_modifier_list.push_back(0.75);
+                dmg_modifier_list.push_back(PkmnRational::pct(75));
             }
 
             // Parental Bond check (0.25 if duplicate strike)
@@ -1358,7 +1351,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                 x2.25 if match tera and APT
              */
             if atk_poke.trained_pokemon.pokemon.has_type(move_type) {
-                dmg_modifier_list.push_back(1.5);
+                // Regular STAB multipler
+                dmg_modifier_list.push_back(PkmnRational::new(3,2));
             }
             // 
             /* Type effectiveness
@@ -1375,13 +1369,13 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             if let Some(ability_fn) = atk_poke.trained_pokemon.ability.move_damage_modifier {
                 let dmg = ability_fn(battle_state, atk_poke, def_poke, pkm_move);
                 if let Some(dmg_stat) = dmg {
-                    dmg_modifier_list.push_back(dmg_stat.float());
+                    dmg_modifier_list.push_back(dmg_stat);
                 }
             }
 
 
             let resist_mult = def_poke.get_type_mult(move_type);
-            if resist_mult != 1.0 {
+            if resist_mult != PkmnRational::ONE() {
                 dmg_modifier_list.push_back(resist_mult);
             }
 
@@ -1392,7 +1386,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
             let mut calc_dmg = base_damage;
             while let Some(modifier) = dmg_modifier_list.pop_front() {
-                calc_dmg = mult_and_round(calc_dmg, modifier);
+                calc_dmg = mult_and_floor(calc_dmg, modifier);
             }
             calc_dmg
         }
@@ -1434,7 +1428,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
             // check there's no type immunity to move
             // TODO: Needs custom text (not affected)
             // check ability (Scrappy), Grounded, etc
-            if poke.get_type_mult(move_action.pkm_move.r#type) == 0.0 {
+            if poke.get_type_mult(move_action.pkm_move.r#type) == PkmnRational::ZERO() {
                 return false;
             }
             // Protect check
@@ -1652,7 +1646,7 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
 
         // Trigger if recoil/recovery if move permits (or do within move)
         if let (target, Some((effect_type, modifier))) = dmg_effect.dmg_after_effect {
-            let calc_damage = mult_and_round(dmg_done,  modifier.float());
+            let calc_damage = mult_and_floor(dmg_done,  modifier);
 
             if let DamageSource::Move(dmg_move_name) = dmg_effect.damage_source {
                 let ba = match effect_type {
@@ -2079,8 +2073,8 @@ impl<'battle, 'simulation: 'battle> BattleState<'battle, 'simulation> {
                     BattleAction::Damage(
                         DamageEffect {
                             target: final_target_pos,
-                            calc_damage: mult_and_round(
-                                target_poke.get_active_stat(PokemonStatName::HEALTH), hp_pct.float()),
+                            calc_damage: mult_and_floor(
+                                target_poke.get_active_stat(PokemonStatName::HEALTH), *hp_pct),
                             damage_source: move_eff_source.unwrap(),
                             dmg_after_effect: (final_target_pos, None),
                             // Assumption that move_effect always comes from pokemon right now

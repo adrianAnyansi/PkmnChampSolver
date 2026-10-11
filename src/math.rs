@@ -8,6 +8,10 @@ pub fn mult_and_round(a: i32, b: f64) -> i32 {
     (a as f64 * b).floor() as i32
 }
 
+pub fn mult_and_floor(a: i32, b: PkmnRational) -> i32 {
+    a * b.numer / b.demon as i32
+}
+
 pub fn div_and_floor(a: i32, b: i32) -> i32 {
     (a as f64 / b as f64).floor() as i32
 }

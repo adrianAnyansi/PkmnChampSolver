@@ -49,6 +49,12 @@ Therefore I'm changing the logic for non-fail cases* to just return a battlestat
 
 Contact =/= Damage, there are also situations were a move can deal 0 damage but triggers contact
 
+### Ability memory
+
+Here's the solution to stuff like Disguise, Unburden, etc
+In ActivePokemon I'll have votalite + non volatile memory
+This way the ability can store memory without needing to worry about location/per ability memory
+
 
 ## Damage/Heal attribution
 
@@ -59,3 +65,9 @@ Field: Some damage/healing is based on the field, this overrides target
 Future sight: Has a team index but not always on the field
 
 AfterDamageEffect - Recoil and Drain always target the move user, so they dont need attribution but i'll leave it there
+
+
+## Speed/Priority stuff
+
+Quash- Put a flag, and sort in the queue
+After You- Override speed order, and since a speed change can't occur before the next move, should be fine.

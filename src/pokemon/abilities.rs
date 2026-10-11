@@ -106,7 +106,7 @@ pub struct PokemonAbility<'simulation> {
     pub type_flags: PokemonBitFlag128<AbilityTriggerFlag>,
     
     /// Actions triggered on entering the field
-    pub enter_fn:Option<OnEnterFn<'simulation>>,
+    pub on_enter_fn:Option<OnEnterFn<'simulation>>,
     /// Actions triggered by MoveDamage
     pub move_damage_fn:Option<OnMoveDamageFn<'simulation>>,
     /// Weather change actions
@@ -127,7 +127,7 @@ impl<'simulation> PokemonAbility<'simulation> {
         PokemonAbility { 
             name, 
             // on_enter: vec![],
-            enter_fn: None,
+            on_enter_fn: None,
             move_damage_fn: None,
             weather_change_fn: None,
             type_flags: PokemonBitFlag128::<AbilityTriggerFlag>::empty(),
@@ -145,7 +145,7 @@ impl<'simulation> PokemonAbility<'simulation> {
     pub fn add_enter_effect(mut self,
         enter_fn: OnEnterFn<'simulation>
     ) -> Self {
-        self.enter_fn = Some(enter_fn);
+        self.on_enter_fn = Some(enter_fn);
         self.add_flag(OnEnter)
     }
 

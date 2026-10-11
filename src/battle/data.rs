@@ -150,12 +150,12 @@ impl<'battle, 'simulation: 'battle> TrainedPokemon<'battle, 'simulation> {
             .collect()
     }
 
-    pub fn get_type_mult(&self, move_type:PokemonType) -> f64 {
+    pub fn get_type_mult(&self, move_type:PokemonType) -> PkmnRational {
         if move_type == PokemonType::TYPELESS {
-            return 1.0
+            return PkmnRational::ONE()
         };
         self.get_pkmn_type().into_iter()
-            .map(|type_def| get_type_multipler(move_type, type_def))
+            .map(|type_def| get_type_multipler(move_type, type_def).get_rat())
             .product()
     }
 }
@@ -256,7 +256,7 @@ impl<'battle, 'simulation: 'battle> ActivePokemon<'battle, 'simulation> {
         }
     }
 
-    pub fn get_type_mult(&self, move_type:PokemonType) -> f64 {
+    pub fn get_type_mult(&self, move_type:PokemonType) -> PkmnRational {
         self.trained_pokemon.get_type_mult(move_type)
     }
 

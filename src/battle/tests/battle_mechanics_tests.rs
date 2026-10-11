@@ -1,4 +1,5 @@
 use super::*;
+use crate::math::mult_and_floor;
 use crate::pokemon::PokemonName::{Charizard, Garchomp, Kingambit, Venusaur};
 use crate::pokemon::moves::PokemonMoveName::Heat_Wave;
 use crate::pokemon::poke_stat::PokemonStatName::*;
@@ -18,16 +19,20 @@ fn test_move_calc() {
         PokemonStatName::SPECIAL_DEFENSE);
     let dmg = pkmn_damage_formula(draco_move.power, atk_stat, def_stat);
 
-    let f_dmg = mult_and_round(dmg, 1.5);
-    let f2_dmg = mult_and_round(f_dmg, 0.5);
+    let stab = PkmnRational::new(3,2);
+    let type_eff = PkmnRational::new(1,2);
+
+    let f_dmg = mult_and_floor(dmg,stab);
+    let f2_dmg = mult_and_floor(f_dmg, type_eff);
     assert_eq!(f2_dmg, 42);
 
-    let min_dmg = mult_and_round(f2_dmg, 0.85);
-    assert_eq!(min_dmg, 35);
+    let min_dmg = mult_and_floor(dmg, PkmnRational::pct(85));
+    let fm_dmg = mult_and_floor(mult_and_floor(min_dmg, stab), type_eff);
+    assert_eq!(fm_dmg, 35);
 }
 
 #[test]
-#[ignore = "currently failing lower bound because damage calculation is inaccurate"]
+// #[ignore = "currently failing lower bound because damage calculation is inaccurate"]
 fn test_dmg2_calc() {
     let char_base_stat = &get_pkmn(Charizard).base_stats;
     let venu_base_stat = &get_pkmn(Venusaur).base_stats;
@@ -39,12 +44,17 @@ fn test_dmg2_calc() {
         PokemonStatName::SPECIAL_DEFENSE);
     let dmg = pkmn_damage_formula(pkmn_move.power, atk_stat, def_stat);
 
-    let f_dmg = mult_and_round(dmg, 1.5);
-    let f2_dmg = mult_and_round(f_dmg, 2.0);
+    let stab = PkmnRational::new(3, 2);
+    let type_eff = PkmnRational::new(2,1);
+
+    let f_dmg = mult_and_floor(dmg, stab);
+    let f2_dmg = mult_and_floor(f_dmg, type_eff);
     assert_eq!(f2_dmg, 138);
 
-    let min_dmg = mult_and_round(f2_dmg, 0.85);
-    assert_eq!(min_dmg, 116);
+    let min_dmg = mult_and_floor(dmg, PkmnRational::pct(85));
+    let fm_dmg = mult_and_floor(min_dmg, stab);
+    let fm2_dmg = mult_and_floor(fm_dmg, type_eff);
+    assert_eq!(fm2_dmg, 116);
 }
 
 #[test]
