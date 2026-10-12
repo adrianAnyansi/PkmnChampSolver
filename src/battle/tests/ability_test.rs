@@ -4,11 +4,18 @@ use crate::battle::{BattleAction, BattlePctAction, BattleState, BattleTeamSide, 
 use crate::battle::data::BattleWeatherState;
 use crate::math::{mult_and_round, PkmnRational};
 use crate::pokemon::abilities::{get_ability, PokemonAbility, PokemonAbilityName};
-use crate::pokemon::moves::{get_move, get_move_priority, MoveEffect, PokemonMoveName};
+use crate::pokemon::moves::{get_move, get_move_priority, DamageAmount, MoveEffect, PokemonMoveName};
 use crate::pokemon::poke_stat::{PokemonNature, PokemonStatName};
 use crate::pokemon::types::PokemonType;
 use crate::pokemon::{get_pkmn, Pokemon, PokemonName};
 use std::sync::LazyLock;
+
+fn raw_damage(amount: DamageAmount) -> u32 {
+    match amount {
+        DamageAmount::RawDamage(damage) => damage,
+        other => panic!("expected raw damage, got {other:?}"),
+    }
+}
 
 static NEUTRAL_POKEMON: LazyLock<Pokemon> = LazyLock::new(|| Pokemon {
     name: PokemonName::Venusaur,
@@ -71,14 +78,17 @@ fn test_blaze_boosts_second_fire_move_below_one_third_hp() {
         .front()
         .unwrap()
     {
-        BattleAction::Damage(effect) => effect.calc_damage,
+        BattleAction::Damage(effect) => raw_damage(effect.dmg_amt),
         action => panic!("expected first move to queue damage, got {action}"),
     };
 
     battle.sim_next_action();
     let state = battle.battle_state.as_mut().unwrap();
     let charizard = state.get_active_mut(FieldPosition::B1).unwrap();
-    let max_hp = charizard.get_active_stat(crate::pokemon::poke_stat::PokemonStatName::HEALTH);
+    let max_hp = u32::try_from(
+        charizard.get_active_stat(crate::pokemon::poke_stat::PokemonStatName::HEALTH),
+    )
+    .expect("max HP should be nonnegative");
     charizard.current_hp = max_hp / 3 - 1;
     assert!(charizard.current_hp * 3 < max_hp);
 
@@ -91,11 +101,17 @@ fn test_blaze_boosts_second_fire_move_below_one_third_hp() {
         .front()
         .unwrap()
     {
-        BattleAction::Damage(effect) => effect.calc_damage,
+        BattleAction::Damage(effect) => raw_damage(effect.dmg_amt),
         action => panic!("expected second move to queue damage, got {action}"),
     };
 
-    assert_eq!(second_damage, mult_and_round(first_damage, 1.5));
+    assert_eq!(
+        i32::try_from(second_damage).expect("damage should fit in i32"),
+        mult_and_round(
+            i32::try_from(first_damage).expect("damage should fit in i32"),
+            1.5,
+        )
+    );
 }
 
 
@@ -136,7 +152,10 @@ fn test_hospitality_heals_ally_one_eighth_on_send_out() {
     battle_state.exec_send_out(FieldPosition::B1, back_idx, None);
 
     let b1 = battle_state.get_active_mut(FieldPosition::B1).unwrap();
-    let max_hp = b1.get_active_stat(crate::pokemon::poke_stat::PokemonStatName::HEALTH);
+    let max_hp = u32::try_from(
+        b1.get_active_stat(crate::pokemon::poke_stat::PokemonStatName::HEALTH),
+    )
+    .expect("max HP should be nonnegative");
     b1.current_hp = max_hp / 2;
 
     let hospitality = get_ability(PokemonAbilityName::Hospitality);
@@ -330,10 +349,13 @@ fn test_rough_skin_damages_attacker_one_eighth_after_move_damage() {
         vec![FieldPosition::B1],
     );
 
-    let attacker_max_hp = battle_state
-        .get_active(FieldPosition::F1)
-        .unwrap()
-        .get_active_stat(PokemonStatName::HEALTH);
+    let attacker_max_hp = u32::try_from(
+        battle_state
+            .get_active(FieldPosition::F1)
+            .unwrap()
+            .get_active_stat(PokemonStatName::HEALTH),
+    )
+    .expect("max HP should be nonnegative");
     let mut battle = BattleContainer::simple(battle_state, PkmnRational::ONE());
 
     // Simulating the move queues the move damage
@@ -342,7 +364,7 @@ fn test_rough_skin_damages_attacker_one_eighth_after_move_damage() {
         BattleAction::Damage(effect) => {
             assert_eq!(effect.target, FieldPosition::B1);
             assert!(matches!(effect.damage_source, DamageSource::Move(_)));
-            effect.calc_damage
+            raw_damage(effect.dmg_amt)
         }
         action => panic!("expected move damage, got {action}"),
     };
@@ -365,10 +387,14 @@ fn test_rough_skin_damages_attacker_one_eighth_after_move_damage() {
         .expect("Rough Skin should queue damage");
 
     assert_eq!(ability_damage.target, FieldPosition::F1);
-    assert_eq!(ability_damage.calc_damage, mult_and_round(attacker_max_hp, 0.125));
+    assert!(matches!(
+        ability_damage.dmg_amt,
+        DamageAmount::HealthPct(pct) if pct == PkmnRational::new(1, 8)
+    ));
+    let expected_ability_damage = attacker_max_hp / 8;
 
     // Applying it reduces the attacker's HP by 1/8 of its max HP
     battle.sim_next_action();
     let attacker = battle.battle_state.as_ref().unwrap().get_active(FieldPosition::F1).unwrap();
-    assert_eq!(attacker.current_hp, attacker_max_hp - ability_damage.calc_damage);
+    assert_eq!(attacker.current_hp, attacker_max_hp - expected_ability_damage);
 }

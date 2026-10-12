@@ -188,7 +188,7 @@ pub struct ActivePokemon<'battle> {
     pub status: PokemonStatus,
     pub stat_modifier: [PokemonStatModifier; 5], // temp exclude evasion & acc
     /// current health in the battle
-    pub current_hp: i32,
+    pub current_hp: u32,
     // pub move_history: Vec<PokemonMoveName>,
     /// How many turns active on the field
     pub actions_taken: u8,
@@ -212,7 +212,7 @@ pub struct ActivePokemon<'battle> {
 
 impl<'battle> ActivePokemon<'battle> {
     pub fn new (trained_pokemon:&'battle TrainedPokemon<'battle>) -> Self {
-            let max_hp = trained_pokemon.get_stat(PokemonStatName::HEALTH);
+            let max_hp = trained_pokemon.get_stat(PokemonStatName::HEALTH) as u32;
             Self {
                 current_hp: max_hp, // copied first
                 status: PokemonStatus::NONE,
@@ -293,7 +293,7 @@ impl<'battle> ActivePokemon<'battle> {
     }
 
     pub fn get_health_pct(&self) -> PkmnRational {
-        return PkmnRational::new(self.current_hp,
+        return PkmnRational::new(self.current_hp as i32,
             self.get_active_stat(PokemonStatName::HEALTH) as u32)
     }
 
@@ -302,7 +302,7 @@ impl<'battle> ActivePokemon<'battle> {
 impl core::fmt::Display for ActivePokemon<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut hp_pct_str:String = String::new();
-        let max_hp = self.get_active_stat(PokemonStatName::HEALTH);
+        let max_hp = self.get_active_stat(PokemonStatName::HEALTH) as u32;
         
         // TODO: Get 3 letter version
         let mut status_short:String = String::new();

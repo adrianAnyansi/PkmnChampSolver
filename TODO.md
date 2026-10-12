@@ -12,7 +12,9 @@ Turn 0 doesnt matter until trainer choice and turn mechanics work
 
 ## Today
 --- 
+Light Screen & Trick Room need turns, I think I'm gonna make a struct/generic
 
+End of turn cant really be tested until turn phases are tracked
 
 ---
 
@@ -27,13 +29,13 @@ I could complete the Weather mechanics, and then go into the speed mechanics whe
 ## Ability notes
 
 OnEnter needs to activate multiple other functions, kinda hard to do though since I cant dynamically call them
-OnWeatherChange
+- OnWeatherChange
+- OnFieldChange
 
 
 ## Moves to implement
 Trick Room - Speed order stuff (not doing this btw)
 Light Screen - room effect + damage calc
-Heavy Slam - Weight for base power
 Knock Off - Item mechanic
 
 ## Abilities to implement

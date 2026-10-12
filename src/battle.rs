@@ -17,21 +17,18 @@ mod battle_mechanics;
 mod ability_test;
 
 
-
-use strum_macros::Display;
-
 use crate::battle;
 use crate::battle::DamageAfterEffectEnum::Drain;
 use crate::battle::data::{ActivePokemon, ActiveTeam, BattleTerrain, BattleWeatherState, PokemonBattleState, PokemonFieldState, PokemonStatus, TrainedPokemon, VolatileEnums};
 use crate::pokemon::moves::PokemonMoveFlag::{IGNORE_ACC, INCRM_PROTECT_COUNTER, PROTECT_ACC};
-use crate::pokemon::moves::{MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, DamageAmount, format_pkmn_message, get_charge_message, get_custom_base_power, get_move, get_move_priority, get_weather_modify_move};
+use crate::pokemon::moves::{DamageAfterEffectEnum, DamageAmount, MoveEffect, PokemonBitFlag128, PokemonMoveFlag, PokemonMoveName, StatModf, StatSet, format_pkmn_message, get_charge_message, get_custom_base_power, get_damage_after_effect, get_weather_modify_move};
 use crate::pokemon::poke_stat::PokemonStatName::HEALTH;
 use crate::{battle::battle_processor::BattleContainer};
 use crate::math::{BinCombination8, PkmnRational, div_and_floor, gen_power_set, mult_and_floor};
 use crate::pokemon::abilities::PokemonAbilityName;
-use crate::pokemon::{self, Pokemon, moves::{BattlePreAction, FieldTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}, poke_stat::get_full_stat};
-use crate::pokemon::{poke_stat::{PokemonStatName, PokemonStats}, types::PokemonType};
-use crate::pokemon::poke_stat::{PokemonStatModifier, PokemonNature};
+use crate::pokemon::{ moves::{FieldTarget, PokemonMove, PokemonMoveCategory::{Physical, Special}}};
+use crate::pokemon::{poke_stat::{PokemonStatName, }, types::PokemonType};
+use crate::pokemon::poke_stat::{PokemonStatModifier, };
 
 
 static LEVEL: i32 = 50;
@@ -277,18 +274,17 @@ pub struct MoveResult {
 #[derive(Clone, Copy)]
 pub enum EffectOwner {
     Pokemon(TeamIndex),
-    FieldEffect(PokemonFieldState)
+    FieldEffect(PokemonFieldState),
+    Ambient
 }
 
 /// Damage Effect calculated by a move or other source
 #[derive(Clone)]
 pub struct DamageEffect {
     pub target: FieldPosition,
-    pub calc_damage: i32,
-    // TODO: This needs to handle multiple things like Ability damage,
-    // Whirlpool, regular moves, Status
+    pub dmg_amt: DamageAmount,
     pub damage_source: DamageSource,
-    pub dmg_after_effect: (FieldPosition, Option<(DamageAfterEffectEnum, PkmnRational)>),
+    pub dmg_after_effect: Option<(FieldPosition, DamageAfterEffectEnum, PkmnRational)>,
     pub owner: EffectOwner
 }
 
@@ -296,20 +292,11 @@ pub struct DamageEffect {
 #[derive(Clone, Copy)]
 pub struct HealEffect {
     pub target: FieldPosition,
-    pub calc_healing: i32,
+    pub calc_healing: u32,
     /// TODO: Re-using damage until this more details are needed
     pub heal_source: DamageSource,
     /// TODO: This should include field effects
     pub owner: TeamIndex
-}
-
-/// Used to calculate recoil or healing after
-#[derive(Clone, Copy)]
-pub enum DamageAfterEffectEnum {
-    /// Recoil damage from moves
-    Recoil,
-    /// Healing from moves
-    Drain
 }
 
 
@@ -342,7 +329,8 @@ pub enum DamageSource {
     Ability(PokemonAbilityName),
     Status(PokemonStatus),
     Recoil(PokemonMoveName),
-    Heal(PokemonMoveName)
+    Heal(PokemonMoveName),
+    Weather(BattleWeatherState)
 }
 
 impl std::fmt::Display for DamageSource {
@@ -352,7 +340,8 @@ impl std::fmt::Display for DamageSource {
             DamageSource::Recoil(move_name)|
             DamageSource::Heal(move_name) => write!(f, "DamageSource({move_name})"),
             DamageSource::Ability(ability_name) => write!(f, "DamageSource({ability_name})"),
-            DamageSource::Status(status_name) => write!(f, "DamageSource({status_name})")
+            DamageSource::Status(status_name) => write!(f, "DamageSource({status_name})"),
+            DamageSource::Weather(status_name) => write!(f, "DamageSource({status_name})"),
             
         }
     }
@@ -376,6 +365,13 @@ pub enum BattleStatePhase {
     InTurn,
     /// End of turn 
     EndTurn
+}
+
+#[derive(Clone, Copy)]
+/// Used to keep track of effects that last N turns
+pub struct BattleTempEffect <T> {
+    ident: T,
+    turns: u8
 }
 
 /// Represents the state of the battle between any action/resolve.
@@ -842,30 +838,6 @@ impl<'battle> BattleState<'battle> {
         (true, "".to_string())
     }
 
-    /// Get Recoil/Heal damage from effect
-    fn get_damage_after_effect(pkm_move:&PokemonMove) 
-        -> Option<(DamageAfterEffectEnum, PkmnRational)> {
-        
-        use PokemonMoveFlag::*;
-        if pkm_move.flags.has_flag(MOVE_RECOIL) || 
-        pkm_move.flags.has_flag(MOVE_DRAIN) {
-           
-            for hit_action in pkm_move.hit_actions.iter() {
-                match hit_action {
-                    MoveEffect::Healing(_target, 
-                        DamageAmount::MoveDmgPct(pct)) => 
-                            return Some((DamageAfterEffectEnum::Drain, *pct)),
-                    MoveEffect::Damage(_target, 
-                        DamageAmount::MoveDmgPct(pct)) => 
-                            return Some((DamageAfterEffectEnum::Recoil, *pct)),
-                    _ => {}
-                }
-            }
-        }
-
-
-        None
-    }
 
     /// Simulate multiple* stat changes for a pokemon in order
     fn sim_stat(&self, stat_set:&StatSet, target_pos:FieldPosition, rat:PkmnRational) -> Vec<BattleContainer<'battle>> {
@@ -1174,15 +1146,21 @@ impl<'battle> BattleState<'battle> {
                 let bat_pos = **target_pos;
                 // TODO: Some moves may do more than just damage
                 // This damage should be accurate pre-defense ability/etc modification
-                let dmg_after_effect = BattleState::get_damage_after_effect(move_action.pkm_move);
+                let dmg_after_effect  = if 
+                    let Some((dmg_af_enum, rat)) 
+                    = get_damage_after_effect(move_action.pkm_move) {
+                        Some((move_action.source, dmg_af_enum, rat))
+                    } else {
+                        None
+                    };
 
                 // Trigger DamageEffect
                 let team_index = self.get_active_team_idx(move_action.source);
                 let dmg_effect = DamageEffect {
                     target: bat_pos,
-                    calc_damage: move_damage,
+                    dmg_amt: DamageAmount::RawDamage(move_damage as u32),
                     damage_source: DamageSource::Move(move_action.pkm_move.name),
-                    dmg_after_effect: (move_action.source, dmg_after_effect),
+                    dmg_after_effect: dmg_after_effect,
                     owner: EffectOwner::Pokemon(team_index.unwrap())
                 };
                 
@@ -1587,7 +1565,7 @@ impl<'battle> BattleState<'battle> {
     fn sim_damage(&self, mut dmg_effect:DamageEffect) -> Vec<BattleContainer<'battle>> {
 
         // TODO: Check if any abilities block/mitigate the damage, i.e disguise
-        // NOTE: Might be bad to check here, lets assume damage is always accurate
+        // NOTE: Assumption is hit is always guaranteed
 
         let mut cloned_state = self.clone();
 
@@ -1618,10 +1596,20 @@ impl<'battle> BattleState<'battle> {
         let target_pkmn: &mut ActivePokemon<'_> = 
             cloned_state.get_active_mut(dmg_effect.target).unwrap();
 
-        // let curr_hp = target_pkmn.current_hp;
-        // let total_hp = target_pkmn.get_active_stat(HEALTH);
         // TODO: Any pre-damage takes (items, abilities, endure)
-        let dmg_done = dmg_effect.calc_damage.min(target_pkmn.current_hp);
+
+        let max_dmg = match dmg_effect.dmg_amt {
+            DamageAmount::RawDamage(amt) => amt,
+            DamageAmount::HealthPct(pct) => mult_and_floor(
+                target_pkmn.get_active_stat(PokemonStatName::HEALTH),
+                pct,
+            ) as u32,
+            DamageAmount::MoveSpecific(..) => {
+                panic!("Not yet implemented, do special logic here")
+            }
+            DamageAmount::MoveDmgPct(..) => panic!("MoveEffect only")
+        };
+        let dmg_done = max_dmg.min(target_pkmn.current_hp);
 
         target_pkmn.current_hp -= dmg_done;
         // let final_hp = target_pkmn.current_hp;
@@ -1639,13 +1627,13 @@ impl<'battle> BattleState<'battle> {
             );
         }
         
-        // Trigger any health effects (abilities, berries, etc)
+        // TODO: Trigger any health effects (abilities, berries, etc)
 
-        // TODO: deprecate recoil/damage
 
         // Trigger if recoil/recovery if move permits (or do within move)
-        if let (target, Some((effect_type, modifier))) = dmg_effect.dmg_after_effect {
-            let calc_damage = mult_and_floor(dmg_done,  modifier);
+        if let Some((target, effect_type, modifier)) = dmg_effect.dmg_after_effect {
+            
+            let calc_damage = mult_and_floor(dmg_done as i32,  modifier) as u32;
 
             if let DamageSource::Move(dmg_move_name) = dmg_effect.damage_source {
                 let ba = match effect_type {
@@ -1653,9 +1641,9 @@ impl<'battle> BattleState<'battle> {
                         let team_idx = self.get_active_team_idx(target);
                         BattleAction::Damage( DamageEffect {
                             target,
-                            calc_damage,
+                            dmg_amt: DamageAmount::RawDamage(calc_damage),
                             damage_source: DamageSource::Recoil(dmg_move_name),
-                            dmg_after_effect: (target, None),
+                            dmg_after_effect: None,
                             owner: EffectOwner::Pokemon(team_idx.unwrap())
                         })
                     },
@@ -1689,7 +1677,7 @@ impl<'battle> BattleState<'battle> {
 
         let target_pkmn = self.get_active_mut(heal_effect.target).unwrap();
         
-        let total_hp = target_pkmn.get_active_stat(HEALTH);
+        let total_hp = target_pkmn.get_active_stat(HEALTH) as u32;
 
         // TODO: BIG ROOT or ability check
         let healing_done = heal_effect.calc_healing.max(total_hp - target_pkmn.current_hp);
@@ -1859,12 +1847,7 @@ impl<'battle> BattleState<'battle> {
         // TODO: Effect order
         
         // Weather effect
-        if self.weather_turns > 0 {
-            self.weather_turns -= 1;
-            if self.weather_turns == 0 {
-                self.weather = BattleWeatherState::NONE;
-            }
-        }
+        self.exec_end_of_turn_weather();
 
         // Terrain
         // Future-Sight/Wish/Etc
@@ -1874,8 +1857,7 @@ impl<'battle> BattleState<'battle> {
 
         // TODO: Go through all abilties & etc to resolve end of turn stuff ``
 
-        use FieldPosition::*;
-        for pos in [F1, F2, B1, B2] {
+        for pos in BattleState::FIELD_POS {
             let Some(act_poke) = self.get_active_mut(pos) else { continue };
             
             // clear volatile flags
@@ -1895,6 +1877,47 @@ impl<'battle> BattleState<'battle> {
         let team = self.get_team_by_side(team_side);
         let num_alive = team.get_alive_indexes();
         return num_alive.len() > 0
+    }
+
+    /// Compute end of weather effects
+    pub fn exec_end_of_turn_weather(&mut self) {
+        if self.weather_turns > 0 {
+            self.weather_turns -= 1;
+            if self.weather_turns == 0 {
+                self.weather = BattleWeatherState::NONE;
+            }
+        }
+        // Sandstorm effect
+        if self.weather == BattleWeatherState::SANDSTORM {
+            // Check types
+            for pos in BattleState::FIELD_POS {
+                if let Some(act_poke) = self.get_active(pos) {
+                    if act_poke.get_active_types().iter().any(
+                        |p_type| 
+                        [&PokemonType::STEEL, &PokemonType::GROUND, &PokemonType::ROCK].contains(&p_type)
+                    ) {continue;}
+
+                    const Sandstorm_Immune_Abilities: &[PokemonAbilityName] = &[
+                        PokemonAbilityName::Sand_Force,
+                        // Sand Rush, SandVeil, OverCoat, Safety Goggles
+                    ];
+                    if Sandstorm_Immune_Abilities.contains(
+                        &act_poke.trained_pokemon.ability.name
+                    ) {continue;}
+
+                    self.action_queue.push_back(
+                        BattleAction::Damage(
+                        DamageEffect {
+                            target: pos,
+                            dmg_amt: DamageAmount::HealthPct(PkmnRational::new(1, 16)), // 1/16 health
+                            damage_source: DamageSource::Weather(self.weather),
+                            dmg_after_effect: None, // TODO: Can't do this here
+                            owner: EffectOwner::Ambient
+                        })
+                    );
+                }
+            }
+        }
     }
 
 
@@ -2060,22 +2083,23 @@ impl<'battle> BattleState<'battle> {
                     BattleAction::Heal(
                         HealEffect {
                             target: final_target_pos, 
-                            calc_healing: (target_poke.get_active_stat(PokemonStatName::HEALTH) as f64 * hp_pct.float()) as i32,
+                            calc_healing: (target_poke.get_active_stat(PokemonStatName::HEALTH) as f64 * hp_pct.float()) as u32,
                             heal_source: move_eff_source.unwrap(),
                             owner: self.get_active_team_idx(eff_source_pos).unwrap()
                         }
                     )
                 },
-                MoveEffect::Damage(_target, DamageAmount::HealthPct(hp_pct)) => {
-                    let target_poke = self.get_active(final_target_pos).unwrap();
+                MoveEffect::Damage(_target, dmga @ DamageAmount::HealthPct(hp_pct)) => {
+                    // let target_poke = self.get_active(final_target_pos).unwrap();
                     let team_idx = self.get_active_team_idx(eff_source_pos).unwrap();
                     BattleAction::Damage(
                         DamageEffect {
                             target: final_target_pos,
-                            calc_damage: mult_and_floor(
-                                target_poke.get_active_stat(PokemonStatName::HEALTH), *hp_pct),
+                            dmg_amt: *dmga,
+                            // calc_damage: mult_and_floor(
+                            //     target_poke.get_active_stat(PokemonStatName::HEALTH), *hp_pct),
                             damage_source: move_eff_source.unwrap(),
-                            dmg_after_effect: (final_target_pos, None),
+                            dmg_after_effect: None,
                             // Assumption that move_effect always comes from pokemon right now
                             owner: EffectOwner::Pokemon(team_idx)
                             

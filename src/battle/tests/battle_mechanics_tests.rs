@@ -2,9 +2,9 @@ use super::*;
 use crate::math::mult_and_floor;
 use crate::pokemon::PokemonName::{Charizard, Garchomp, Kingambit, Venusaur};
 use crate::pokemon::moves::PokemonMoveName::Heat_Wave;
-use crate::pokemon::poke_stat::PokemonStatName::*;
+use crate::pokemon::poke_stat::{get_full_stat, PokemonStatName::*};
 use crate::pokemon::*;
-use crate::pokemon::moves::{get_move, PokemonMoveName};
+use crate::pokemon::moves::{get_move, get_move_priority, PokemonMoveName};
 
 #[test]
 /// Verify base damage formula using blank Garchomp Draco Meteor vs Kingambit

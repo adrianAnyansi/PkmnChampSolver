@@ -3,7 +3,7 @@ use crate::battle::data::{ActivePokemon, BattleWeatherState, PokemonBattleState}
 use crate::battle::{BattleAction, FieldPosition, BattleState, DamageAfterEffectEnum, DamageSource};
 use crate::math::PkmnRational;
 use crate::pokemon::PokemonName;
-use crate::pokemon::moves::{get_move, get_weather_modify_move, PokemonMoveName};
+use crate::pokemon::moves::{get_move, get_weather_modify_move, DamageAmount, PokemonMoveName};
 use crate::pokemon::types::PokemonType;
 
 /// Create a quick bc with Garchomp (B1) vs Tyranitar (F1)
@@ -198,8 +198,9 @@ fn test_flare_blitz_queues_recoil_after_damage() {
         damage_action,
         BattleAction::Damage(effect)
             if effect.target == FieldPosition::F1
-                && effect.dmg_after_effect.0 == FieldPosition::B1
-                && matches!(effect.dmg_after_effect.1, Some((DamageAfterEffectEnum::Recoil, _)))
+                && matches!(effect.dmg_after_effect, 
+                    Some((FieldPosition::B1, DamageAfterEffectEnum::Recoil, _))
+                )
     ));
 
     root_bc.sim_next_action();
@@ -283,7 +284,7 @@ fn test_weather_ball_power_and_type_by_weather() {
 
 #[test]
 fn test_weather_ball_damage_boosts_and_changes_type_in_sun_with_dummy_bc() {
-    fn weather_ball_damage_in_weather(weather: BattleWeatherState) -> i32 {
+    fn weather_ball_damage_in_weather(weather: BattleWeatherState) -> u32 {
         let mut root_bc = dummy_bc();
         let battle_state = root_bc.battle_state.as_mut().unwrap();
         battle_state.weather = weather;
@@ -412,7 +413,7 @@ fn typeless_pokemon(weight: f64) -> &'static crate::pokemon::Pokemon {
 }
 
 /// Run Heavy Slam from a fixed-weight attacker into a target of `target_weight`
-fn heavy_slam_damage(attacker_weight: f64, target_weight: f64) -> i32 {
+fn heavy_slam_damage(attacker_weight: f64, target_weight: f64) -> u32 {
     use crate::battle::data::TrainedPokemon;
     use crate::pokemon::abilities::{get_ability, PokemonAbilityName};
     use crate::pokemon::poke_stat::PokemonNature;
@@ -438,7 +439,10 @@ fn heavy_slam_damage(attacker_weight: f64, target_weight: f64) -> i32 {
     let mut bc = BattleContainer::simple(bs, PkmnRational::ONE());
     bc.sim_next_action();
     match bc.battle_state.as_ref().unwrap().action_queue.front().unwrap() {
-        BattleAction::Damage(effect) => effect.calc_damage,
+        BattleAction::Damage(effect) => match effect.dmg_amt {
+            DamageAmount::RawDamage(damage) => damage,
+            amount => panic!("expected raw Heavy Slam damage, got {amount:?}"),
+        },
         action => panic!("expected Heavy Slam to queue damage, got {action}"),
     }
 }

@@ -81,8 +81,10 @@ pub enum DamageAmount {
     HealthPct(PkmnRational),
     /// Based on move damage
     MoveDmgPct(PkmnRational),
-    /// Specific move: Attack stat before decreased by 1
-    StrengthSap,
+    /// Specific moves, to be implemented
+    MoveSpecific(PokemonMoveName),
+    /// Raw Damage calculation
+    RawDamage(u32)
 }
 
 pub enum DamageTiming {
@@ -937,4 +939,37 @@ pub fn get_move_priority(pkm_move:&PokemonMove) -> i8 {
         return -6
     }
     0
+}
+
+/// Used to calculate recoil or healing after
+#[derive(Clone, Copy)]
+pub enum DamageAfterEffectEnum {
+    /// Recoil damage from moves
+    Recoil,
+    /// Healing from moves
+    Drain
+}
+
+/// Get Recoil/Heal damage from effect
+pub fn get_damage_after_effect(pkm_move:&PokemonMove) 
+    -> Option<(DamageAfterEffectEnum, PkmnRational)> {
+    
+    use PokemonMoveFlag::*;
+    if pkm_move.flags.has_flag(MOVE_RECOIL) || 
+    pkm_move.flags.has_flag(MOVE_DRAIN) {
+        
+        for hit_action in pkm_move.hit_actions.iter() {
+            match hit_action {
+                MoveEffect::Healing(_target, 
+                    DamageAmount::MoveDmgPct(pct)) => 
+                        return Some((DamageAfterEffectEnum::Drain, *pct)),
+                MoveEffect::Damage(_target, 
+                    DamageAmount::MoveDmgPct(pct)) => 
+                        return Some((DamageAfterEffectEnum::Recoil, *pct)),
+                _ => {}
+            }
+        }
+    }
+
+    None
 }
